@@ -10,10 +10,7 @@ namespace TmaCleanRoom
 {
     internal static class CleanRoomMeetingService
     {
-        // Values from Word.WdCollapseDirection. Dynamic Word dispatch is used in
-        // this class, so named constants keep the Office PIA out of the runtime MSI.
-        private const int WordCollapseEnd = 0;
-        private const int WordCollapseStart = 1;
+        private const string DefaultOnlineMeetingLocation = "Microsoft Teams Meeting";
         private const string PropertyBase =
             "http://schemas.microsoft.com/mapi/string/{9A5B5D75-42A7-4EF1-98BE-8B4B70944E89}/";
         internal const string MeetingIdProperty = PropertyBase + "TmaCleanRoomMeetingId";
@@ -65,6 +62,12 @@ namespace TmaCleanRoom
             SetStringProperty(appointment, SchemaProperty, "1");
             if (!String.IsNullOrWhiteSpace(optionsUrl))
                 SetStringProperty(appointment, OptionsUrlProperty, optionsUrl);
+
+            // Match the stock add-in while preserving a physical room or any
+            // custom location that the organizer entered before creating the link.
+            if (String.IsNullOrWhiteSpace(appointment.Location))
+                appointment.Location = DefaultOnlineMeetingLocation;
+
             string existingBody = appointment.Body ?? String.Empty;
             string plainBlock = !String.IsNullOrWhiteSpace(stockText) ? stockText :
                 "____________________________________________________________\r\n" +
@@ -240,14 +243,14 @@ namespace TmaCleanRoom
                     dynamic wordDocument = inspector.WordEditor;
                     dynamic range = wordDocument.Content;
                     string existingText = Convert.ToString(range.Text);
-                    range.Collapse(WordCollapseStart);
+                    range.Collapse(1); // Word.WdCollapseDirection.wdCollapseStart
                     if (!String.IsNullOrWhiteSpace(existingText == null ? null :
                         existingText.Trim('\r', '\n', '\a', ' ')))
                     {
                         // Outlook a déjà inséré la signature au moment de Display().
                         // Le bloc de réunion est ajouté avant celle-ci sans la remplacer.
                         range.InsertParagraphBefore();
-                        range.Collapse(WordCollapseStart);
+                        range.Collapse(1);
                     }
                     // Word defaults Attachment to true when optional arguments are
                     // omitted. With a dynamic COM dispatch, values must be passed
@@ -284,9 +287,9 @@ namespace TmaCleanRoom
                     "Microsoft", "Signatures", signatureName + ".htm");
                 if (!File.Exists(signaturePath)) return;
                 dynamic signatureRange = wordDocument.Content;
-                signatureRange.Collapse(WordCollapseEnd);
+                signatureRange.Collapse(0);
                 signatureRange.InsertParagraphAfter();
-                signatureRange.Collapse(WordCollapseEnd);
+                signatureRange.Collapse(0);
                 signatureRange.InsertFile(signaturePath, Type.Missing,
                     false, false, false);
                 LegacyTeamsSchedulerBridge.Log("Outlook signature inserted: " + signatureName);
