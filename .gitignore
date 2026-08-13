@@ -17,3 +17,5 @@ clean-room/outlook-resiliency-*.reg
 github-export/
 vendor/*
 !vendor/README.md
+__pycache__/
+*.pyc
