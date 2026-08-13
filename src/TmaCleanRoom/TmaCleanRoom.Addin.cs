@@ -22,7 +22,7 @@ namespace TmaCleanRoom
     public sealed class Addin : IDTExtensibility2, IRibbonExtensibility
     {
         private Outlook.Application outlook;
-        private IRibbonUI ribbon;
+        private readonly List<IRibbonUI> ribbons = new List<IRibbonUI>();
         private Outlook.Inspectors inspectors;
         private readonly List<AppointmentInspectorTracker> appointmentInspectors =
             new List<AppointmentInspectorTracker>();
@@ -51,7 +51,7 @@ namespace TmaCleanRoom
             inspectors = null;
             if (outlook != null) Marshal.FinalReleaseComObject(outlook);
             outlook = null;
-            ribbon = null;
+            ribbons.Clear();
         }
 
         public void OnAddInsUpdate(ref Array custom) { }
@@ -76,12 +76,25 @@ namespace TmaCleanRoom
             return String.Empty;
         }
 
-        public void Ribbon_Load(IRibbonUI ui) { ribbon = ui; }
+        public void Ribbon_Load(IRibbonUI ui)
+        {
+            if (ui != null) ribbons.Add(ui);
+        }
+
+        private void InvalidateRibbons()
+        {
+            for (int index = ribbons.Count - 1; index >= 0; index--)
+            {
+                try { ribbons[index].Invalidate(); }
+                catch (COMException) { ribbons.RemoveAt(index); }
+                catch (InvalidComObjectException) { ribbons.RemoveAt(index); }
+            }
+        }
 
         private void Inspectors_NewInspector(Outlook.Inspector inspector)
         {
             TrackAppointmentInspector(inspector);
-            if (ribbon != null) ribbon.Invalidate();
+            InvalidateRibbons();
         }
 
         private void TrackAppointmentInspector(Outlook.Inspector inspector)
@@ -96,7 +109,7 @@ namespace TmaCleanRoom
         {
             appointmentInspectors.Remove(tracker);
             tracker.Dispose();
-            if (ribbon != null) ribbon.Invalidate();
+            InvalidateRibbons();
         }
 
         public bool ExplorerMeeting_GetEnabled(IRibbonControl control)
@@ -181,7 +194,7 @@ namespace TmaCleanRoom
         {
             CleanRoomMeetingService.SetInvitationLanguage(
                 ResolveAppointment(control), language);
-            if (ribbon != null) ribbon.Invalidate();
+            InvalidateRibbons();
         }
 
         public void CreateWebinar(IRibbonControl control)
@@ -303,7 +316,7 @@ namespace TmaCleanRoom
             try
             {
                 OfficeNativeSignIn.Show();
-                if (ribbon != null) ribbon.Invalidate();
+                InvalidateRibbons();
             }
             catch (Exception ex)
             {
@@ -351,7 +364,7 @@ namespace TmaCleanRoom
         {
             Outlook.AppointmentItem appointment = ResolveAppointment(control);
             if (appointment != null) CleanRoomMeetingService.RemoveMeeting(appointment);
-            if (ribbon != null) ribbon.Invalidate();
+            InvalidateRibbons();
         }
 
         public bool OfficeAccount_GetVisible(IRibbonControl control)
