@@ -37,6 +37,12 @@ jobs:
           echo '```text' >> "$GITHUB_STEP_SUMMARY"
           tail -n 200 build-linux.log >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 40 build-linux.log | while IFS= read -r line; do
+            line=${line//'%'/'%25'}
+            line=${line//$'\r'/'%0D'}
+            line=${line//$'\n'/'%0A'}
+            echo "::error::$line"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: TMA-Standalone-msi
