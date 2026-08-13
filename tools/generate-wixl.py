@@ -30,9 +30,9 @@ lines = ['<?xml version="1.0" encoding="utf-8"?>',
  'Manufacturer="TMA Standalone Contributors" UpgradeCode="{4E2C715F-1D33-4769-A56B-4954AD128700}">',
  '<Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />',
  '<Media Id="1" Cabinet="payload.cab" EmbedCab="yes" />',
- # Remove the previous product before installing components. The default late
- # schedule can otherwise delete files shared through stable component GUIDs.
- '<MajorUpgrade Schedule="afterInstallInitialize" AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Une version plus récente de TMA autonome est déjà installée." />',
+ # Remove the previous product before component costing. A later schedule can
+ # mark versioned files as already present and then delete them with the old MSI.
+ '<MajorUpgrade Schedule="afterInstallValidate" AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Une version plus récente de TMA autonome est déjà installée." />',
  '<Directory Id="TARGETDIR" Name="SourceDir"><Directory Id="ProgramFiles64Folder">',
  '<Directory Id="INSTALLFOLDER" Name="TMA-Standalone">']
 
