@@ -17,10 +17,11 @@ $payload = Join-Path $work 'payload'
 $addin = Join-Path $work 'addin'
 $filesWxs = Join-Path $work 'TmaFiles.wxs'
 $lock = Get-Content (Join-Path $root 'dependencies.lock.json') -Raw | ConvertFrom-Json
-$packageVersion = if ($env:TMA_VERSION) { $env:TMA_VERSION } else { '2.0.0' }
+$packageVersion = & (Join-Path $PSScriptRoot 'Get-PackageVersion.ps1')
 if ($packageVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "Version MSI invalide : $packageVersion"
 }
+$env:TMA_VERSION = $packageVersion
 
 foreach ($command in 'curl','unzip','msiextract','dotnet','python3','msiinfo','wixl') {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Prérequis Linux absent : $command" }

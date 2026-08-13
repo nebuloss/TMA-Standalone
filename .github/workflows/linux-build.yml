@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: '8.0.424'
@@ -30,12 +32,8 @@ jobs:
       - name: Build Windows MSI on Linux
         id: build
         shell: bash
-        env:
-          TMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '2.0.0' }}
         run: |
           set -o pipefail
-          TMA_VERSION="${TMA_VERSION#v}"
-          export TMA_VERSION
           pwsh -NoProfile -File ./scripts/build/Build-Linux.ps1 2>&1 | tee build-linux.log
       - name: Expose build diagnostics
         if: failure() && steps.build.outcome == 'failure'

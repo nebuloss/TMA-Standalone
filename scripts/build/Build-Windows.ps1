@@ -9,6 +9,7 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $MsiPath) { $MsiPath = Join-Path $root 'vendor\MicrosoftTeamsMeetingAddinInstaller.msi' }
 if (-not $OutputMsi) { $OutputMsi = Join-Path $root 'TMA-Standalone.msi' }
+$env:TMA_VERSION = & (Join-Path $PSScriptRoot 'Get-PackageVersion.ps1')
 $wixl = Join-Path $root '.tools\wixl'
 $dotnet = Join-Path $root '.tools\dotnet\dotnet.exe'
 if (-not (Test-Path $dotnet)) { & (Join-Path $root 'scripts\dependencies\Get-DotNetSdk.ps1') }

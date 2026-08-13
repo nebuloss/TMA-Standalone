@@ -4,7 +4,9 @@ from xml.sax.saxutils import escape
 
 payload = pathlib.Path(os.environ['TMA_PAYLOAD']).resolve()
 output = pathlib.Path(os.environ['TMA_WXS'])
-product_version = os.environ.get('TMA_VERSION', '2.0.0')
+product_version = os.environ.get('TMA_VERSION')
+if product_version is None:
+    raise ValueError('TMA_VERSION must be resolved by the build script')
 if not re.fullmatch(r'\d+\.\d+\.\d+', product_version):
     raise ValueError(f'Invalid MSI product version: {product_version}')
 files = sorted(p for p in payload.rglob('*') if p.is_file())
