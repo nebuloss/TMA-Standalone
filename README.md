@@ -82,6 +82,17 @@ avec `msitools`, compile avec le SDK .NET puis génère le MSI Windows avec WiX 
 Les tests d'installation, COM et Outlook restent nécessairement exécutés sur
 Windows.
 
+Chaque push sur `main` conserve le MSI comme artefact GitHub Actions. Pour
+publier une version, créez et poussez un tag `v*` :
+
+```powershell
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+Le workflow construit alors le MSI sur Linux et crée automatiquement la
+GitHub Release correspondante avec `TMA-Standalone.msi` en pièce jointe.
+
 ## Identité COM
 
 - ProgID : `TmaCleanRoom.Connect`
