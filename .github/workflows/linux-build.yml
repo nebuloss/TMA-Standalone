@@ -74,6 +74,7 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: >-
           gh release create "$GITHUB_REF_NAME"
