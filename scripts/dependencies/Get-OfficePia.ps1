@@ -8,6 +8,32 @@ $office = Join-Path $Destination 'office.dll'; $extensibility = Join-Path $Desti
 if ((Test-Path $office) -and (Test-Path $extensibility) -and (Get-FileHash $office -Algorithm SHA256).Hash -eq $expected.office -and (Get-FileHash $extensibility -Algorithm SHA256).Hash -eq $expected.extensibility) { Write-Host "PIA Office déjà validées : $Destination" -ForegroundColor Green; return }
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('tma-pia-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $temp,$Destination -Force | Out-Null
+
+function Export-MsiBinaryStream([string]$MsiInfo, [string]$Msi,
+    [string]$StreamName, [string]$DestinationPath) {
+    # msiinfo writes the requested stream as raw bytes to stdout. PowerShell text
+    # redirection can transcode those bytes on Linux, producing a corrupt CAB.
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $MsiInfo
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    [void]$startInfo.ArgumentList.Add('extract')
+    [void]$startInfo.ArgumentList.Add($Msi)
+    [void]$startInfo.ArgumentList.Add($StreamName)
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+    try {
+        $destinationStream = [IO.File]::Create($DestinationPath)
+        try { $process.StandardOutput.BaseStream.CopyTo($destinationStream) }
+        finally { $destinationStream.Dispose() }
+        $process.WaitForExit()
+        if ($process.ExitCode) {
+            throw "msiinfo extract a échoué avec le code $($process.ExitCode)."
+        }
+    }
+    finally { $process.Dispose() }
+}
 try {
  $nupkg=Join-Path $temp 'office.nupkg'; Invoke-WebRequest 'https://api.nuget.org/v3-flatcontainer/msofficecore.interop/15.0.2/msofficecore.interop.15.0.2.nupkg' -OutFile $nupkg
  if ((Get-FileHash $nupkg -Algorithm SHA256).Hash -ne 'FCE5ED291A692C5C498F66EFD5CB5A6E3970133A10087EB92152CE1023E41F5F') { throw 'Package office.dll non conforme.' }
@@ -17,7 +43,7 @@ try {
  if ($IsWindows) { $p=Start-Process $redist -ArgumentList ("/extract:$temp"),'/quiet' -Wait -PassThru; if($p.ExitCode){throw "PIARedist: $($p.ExitCode)"}; $msiInfo=Join-Path $root '.tools\wixl\msiinfo.exe' }
  else { foreach($c in '7z','msiinfo','cabextract'){if(-not(Get-Command $c -ErrorAction SilentlyContinue)){throw "Prérequis absent: $c"}}; & 7z x $redist ("-o$temp") -y | Out-Null; if($LASTEXITCODE){throw 'Extraction PIARedist impossible.'}; $msiInfo='msiinfo' }
  $msi=Get-ChildItem $temp -Recurse -Filter o2010pia.msi | Select-Object -First 1; if(-not $msi){throw 'o2010pia.msi absent.'}
- $cab=Join-Path $temp 'PIAREDIST.CAB'; $p=Start-Process $msiInfo -ArgumentList 'extract',$msi.FullName,'PIAREDIST.CAB' -RedirectStandardOutput $cab -Wait -PassThru; if($p.ExitCode){throw 'Cabinet PIA inaccessible.'}
+ $cab=Join-Path $temp 'PIAREDIST.CAB'; Export-MsiBinaryStream $msiInfo $msi.FullName 'PIAREDIST.CAB' $cab
  $name='FL_extensibility_dll_____X86.3643236F_FC70_11D3_A536_0090278A1BB8'
  if($IsWindows){& expand.exe $cab "-F:$name" $temp | Out-Null}else{& cabextract -q -F $name -d $temp $cab}; if($LASTEXITCODE){throw 'Extensibility.dll inaccessible.'}
  Copy-Item (Join-Path $temp $name) $extensibility -Force
