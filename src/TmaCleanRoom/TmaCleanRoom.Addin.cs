@@ -282,7 +282,7 @@ namespace TmaCleanRoom
                 return String.Equals(language, "en", StringComparison.OrdinalIgnoreCase)
                     ? DrawUsFlag() : DrawFrenchFlag();
             }
-            if (control != null && control.Id.IndexOf("AccountMenu",
+            if (control != null && control.Id.IndexOf("Account",
                 StringComparison.OrdinalIgnoreCase) >= 0)
                 return DrawAccountIcon();
             string directory = Path.GetDirectoryName(
@@ -544,6 +544,11 @@ namespace TmaCleanRoom
             return OfficeNativeSignIn.GetAccountLabel();
         }
 
+        public bool Ribbon_AlwaysDisabled(IRibbonControl control)
+        {
+            return false;
+        }
+
         public void DisconnectStandalone(IRibbonControl control)
         {
             OfficeNativeSignIn.SetStandaloneEnabled(false);
@@ -602,9 +607,47 @@ namespace TmaCleanRoom
             return bitmap;
         }
 
-        private static Bitmap DrawAccountIcon()
+        private Bitmap DrawAccountIcon()
         {
             var bitmap = new Bitmap(32, 32);
+            Image profileImage = TryGetOutlookProfilePicture();
+            string profilePath = null;
+            if (profileImage == null)
+                profilePath = OfficeNativeSignIn.GetProfilePicturePath();
+            if (profileImage != null ||
+                (!String.IsNullOrWhiteSpace(profilePath) && File.Exists(profilePath)))
+            {
+                try
+                {
+                    using (Image source = profileImage ?? new Bitmap(profilePath))
+                    using (Graphics graphics = Graphics.FromImage(bitmap))
+                    using (var clip = new System.Drawing.Drawing2D.GraphicsPath())
+                    {
+                        graphics.SmoothingMode =
+                            System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                        graphics.InterpolationMode =
+                            System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        graphics.Clear(Color.Transparent);
+                        clip.AddEllipse(2, 2, 28, 28);
+                        graphics.SetClip(clip);
+                        graphics.DrawImage(source, 2, 2, 28, 28);
+                        graphics.ResetClip();
+                        graphics.DrawEllipse(Pens.LightGray, 2, 2, 28, 28);
+                        return bitmap;
+                    }
+                }
+                catch (ArgumentException)
+                {
+                    // A partially refreshed Office cache image is non-fatal; the
+                    // generic account glyph below remains available.
+                }
+                catch (IOException) { }
+                catch (System.Runtime.InteropServices.ExternalException exception)
+                {
+                    LegacyTeamsSchedulerBridge.Log(
+                        "Account image rendering failed: " + exception.ErrorCode);
+                }
+            }
             using (Graphics graphics = Graphics.FromImage(bitmap))
             using (var background = new SolidBrush(Color.FromArgb(91, 95, 199)))
             using (var foreground = new SolidBrush(Color.White))
@@ -616,6 +659,68 @@ namespace TmaCleanRoom
                 graphics.FillEllipse(foreground, 7, 18, 18, 11);
             }
             return bitmap;
+        }
+
+        private Image TryGetOutlookProfilePicture()
+        {
+            Outlook.NameSpace session = null;
+            Outlook.Recipient currentUser = null;
+            Outlook.AddressEntry addressEntry = null;
+            object exchangeUser = null;
+            object nativePicture = null;
+            try
+            {
+                if (outlook == null) return null;
+                session = outlook.Session;
+                currentUser = session.CurrentUser;
+                addressEntry = currentUser == null ? null : currentUser.AddressEntry;
+                if (addressEntry == null) return null;
+
+                // ExchangeUser.GetPicture is the same identity-aware Outlook Object
+                // Model path used for persona photos. Dynamic dispatch keeps the
+                // build compatible with the pinned Outlook 15 PIA.
+                dynamic dynamicAddressEntry = addressEntry;
+                exchangeUser = dynamicAddressEntry.GetExchangeUser();
+                if (exchangeUser == null) return null;
+                dynamic dynamicExchangeUser = exchangeUser;
+                nativePicture = dynamicExchangeUser.GetPicture();
+                if (nativePicture == null) return null;
+                Image converted = PictureConverter.FromComPicture(nativePicture);
+                LegacyTeamsSchedulerBridge.Log(
+                    "Account image loaded from Outlook ExchangeUser");
+                if (converted == null) return null;
+                using (converted) return new Bitmap(converted);
+            }
+            catch (COMException exception)
+            {
+                LegacyTeamsSchedulerBridge.Log(
+                    "Outlook profile image unavailable: " + exception.ErrorCode);
+                return null;
+            }
+            catch (Exception exception)
+            {
+                LegacyTeamsSchedulerBridge.LogException(
+                    "Outlook profile image lookup failed", exception);
+                return null;
+            }
+            finally
+            {
+                ReleaseComObject(nativePicture);
+                ReleaseComObject(exchangeUser);
+                ReleaseComObject(addressEntry);
+                ReleaseComObject(currentUser);
+                ReleaseComObject(session);
+            }
+        }
+
+        private sealed class PictureConverter : AxHost
+        {
+            private PictureConverter() : base(String.Empty) { }
+
+            internal static Image FromComPicture(object picture)
+            {
+                return GetPictureFromIPicture(picture);
+            }
         }
 
         private Outlook.AppointmentItem ResolveAppointment(IRibbonControl control)
@@ -633,8 +738,10 @@ namespace TmaCleanRoom
             "<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='ExplorerRibbon_Load'>" +
             "<ribbon><tabs><tab idMso='TabCalendar'><group id='TmaCleanRoom.Calendar' label='TMA autonome' insertAfterMso='GroupCalendarNew'>" +
             "<button id='TmaCleanRoom.Connect' label='Se connecter' size='large' getImage='Ribbon_GetImage' getVisible='ConnectOffice_GetVisible' onAction='ConnectOffice'/>" +
-            "<menu id='TmaCleanRoom.AccountMenu' size='large' getLabel='OfficeAccount_GetLabel' getImage='Ribbon_GetImage' getVisible='OfficeAccount_GetVisible'>" +
-            "<button id='TmaCleanRoom.SwitchAccount' label='Changer de compte' onAction='ConnectOffice'/>" +
+            "<menu id='TmaCleanRoom.AccountMenu' label='Compte' size='large' getImage='Ribbon_GetImage' getVisible='OfficeAccount_GetVisible'>" +
+            "<button id='TmaCleanRoom.AccountIdentity' getLabel='OfficeAccount_GetLabel' getImage='Ribbon_GetImage' getEnabled='Ribbon_AlwaysDisabled'/>" +
+            "<menuSeparator id='TmaCleanRoom.AccountSeparator'/>" +
+            "<button id='TmaCleanRoom.SwitchAccount' label='Changer de compte…' onAction='ConnectOffice'/>" +
             "<button id='TmaCleanRoom.Disconnect' label='Déconnecter TMA autonome' onAction='DisconnectStandalone'/>" +
             "</menu>" +
             "<button id='TmaCleanRoom.MeetNow' label='Réunion instantanée' size='large' keytip='MN' getImage='Ribbon_GetImage' getVisible='ExplorerMeeting_GetVisible' getEnabled='ExplorerMeeting_GetEnabled' onAction='MeetNow'/>" +

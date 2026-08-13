@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -138,6 +140,27 @@ namespace TmaCleanRoom
                 }
                 return String.IsNullOrWhiteSpace(selected) ? "Compte Office actif" : selected;
             }
+        }
+
+        internal static string GetProfilePicturePath()
+        {
+            string picturesDirectory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft", "Office", "16.0", "People", "Pictures");
+            if (!Directory.Exists(picturesDirectory)) return null;
+
+            // Office stores the signed-in user's downloaded persona image here. A
+            // profile can briefly leave an older file behind while refreshing, so
+            // prefer the most recently updated supported image.
+            return Directory.EnumerateFiles(picturesDirectory)
+                .Where(path => String.Equals(Path.GetExtension(path), ".jpg",
+                                   StringComparison.OrdinalIgnoreCase) ||
+                               String.Equals(Path.GetExtension(path), ".jpeg",
+                                   StringComparison.OrdinalIgnoreCase) ||
+                               String.Equals(Path.GetExtension(path), ".png",
+                                   StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
         }
 
         private static string GetLoadedModuleVersion(string moduleName)
