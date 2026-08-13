@@ -17,6 +17,10 @@ $payload = Join-Path $work 'payload'
 $addin = Join-Path $work 'addin'
 $filesWxs = Join-Path $work 'TmaFiles.wxs'
 $lock = Get-Content (Join-Path $root 'dependencies.lock.json') -Raw | ConvertFrom-Json
+$packageVersion = if ($env:TMA_VERSION) { $env:TMA_VERSION } else { '2.0.0' }
+if ($packageVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Version MSI invalide : $packageVersion"
+}
 
 foreach ($command in 'curl','unzip','msiextract','dotnet','python3','msiinfo','wixl') {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Prérequis Linux absent : $command" }
@@ -80,5 +84,9 @@ foreach ($requiredIdentity in 'TmaCleanRoom.Connect','8F5373B8-4973-4E58-A69E-CB
 }
 foreach ($forbidden in 'TeamsAddin.FastConnect','19A6E644-14E6-4A60-B8D7-DD20610A871D') {
     if ($registry.Contains($forbidden)) { throw "Identité stock interdite dans le MSI : $forbidden" }
+}
+$properties = (& msiinfo export $OutputMsi Property | Out-String)
+if ($properties -notmatch "ProductVersion\s+$([regex]::Escape($packageVersion))") {
+    throw "ProductVersion MSI inattendue (attendue : $packageVersion)."
 }
 Write-Host "MSI Linux valide : $OutputMsi" -ForegroundColor Green

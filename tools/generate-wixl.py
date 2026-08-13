@@ -1,8 +1,12 @@
 import hashlib, os, pathlib, uuid
+import re
 from xml.sax.saxutils import escape
 
 payload = pathlib.Path(os.environ['TMA_PAYLOAD']).resolve()
 output = pathlib.Path(os.environ['TMA_WXS'])
+product_version = os.environ.get('TMA_VERSION', '2.0.0')
+if not re.fullmatch(r'\d+\.\d+\.\d+', product_version):
+    raise ValueError(f'Invalid MSI product version: {product_version}')
 files = sorted(p for p in payload.rglob('*') if p.is_file())
 dirs = sorted({p.parent.relative_to(payload) for p in files if p.parent != payload},
               key=lambda p: (len(p.parts), str(p)))
@@ -20,11 +24,11 @@ ids = {d: wix_id('Dir', d) for d in dirs}
 components = []
 lines = ['<?xml version="1.0" encoding="utf-8"?>',
  '<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">',
- '<Product Id="*" Name="TMA autonome" Language="1036" Version="2.0.0" '
+ f'<Product Id="*" Name="TMA autonome" Language="1036" Version="{product_version}" '
  'Manufacturer="TMA Standalone Contributors" UpgradeCode="{4E2C715F-1D33-4769-A56B-4954AD128700}">',
  '<Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />',
  '<Media Id="1" Cabinet="payload.cab" EmbedCab="yes" />',
- '<MajorUpgrade DowngradeErrorMessage="Une version plus récente de TMA autonome est déjà installée." />',
+ '<MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Une version plus récente de TMA autonome est déjà installée." />',
  '<Directory Id="TARGETDIR" Name="SourceDir"><Directory Id="ProgramFiles64Folder">',
  '<Directory Id="INSTALLFOLDER" Name="TMA-Standalone">']
 

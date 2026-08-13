@@ -30,8 +30,12 @@ jobs:
       - name: Build Windows MSI on Linux
         id: build
         shell: bash
+        env:
+          TMA_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '2.0.0' }}
         run: |
           set -o pipefail
+          TMA_VERSION="${TMA_VERSION#v}"
+          export TMA_VERSION
           pwsh -NoProfile -File ./scripts/build/Build-Linux.ps1 2>&1 | tee build-linux.log
       - name: Expose build diagnostics
         if: failure() && steps.build.outcome == 'failure'
