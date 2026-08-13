@@ -25,8 +25,18 @@ jobs:
           dotnet tool install --global wix --version 7.0.0
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Build Windows MSI on Linux
-        shell: pwsh
-        run: ./scripts/build/Build-Linux.ps1
+        id: build
+        shell: bash
+        run: |
+          set -o pipefail
+          pwsh -NoProfile -File ./scripts/build/Build-Linux.ps1 2>&1 | tee build-linux.log
+      - name: Expose build diagnostics
+        if: failure() && steps.build.outcome == 'failure'
+        shell: bash
+        run: |
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 200 build-linux.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: TMA-Standalone-msi
