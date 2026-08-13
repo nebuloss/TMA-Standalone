@@ -18,7 +18,7 @@ $addin = Join-Path $work 'addin'
 $filesWxs = Join-Path $work 'TmaFiles.wxs'
 $lock = Get-Content (Join-Path $root 'dependencies.lock.json') -Raw | ConvertFrom-Json
 
-foreach ($command in 'curl','unzip','msiextract','dotnet','python3','msiinfo') {
+foreach ($command in 'curl','unzip','msiextract','dotnet','python3','msiinfo','wixl') {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Prérequis Linux absent : $command" }
 }
 Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
@@ -75,9 +75,9 @@ Copy-Item (Join-Path $payload 'Assets/NewMeeting_Large_96.png') `
 Write-Host '==> Génération WiX et compilation MSI' -ForegroundColor Cyan
 $env:TMA_PAYLOAD = $payload
 $env:TMA_WXS = $filesWxs
-& python3 (Join-Path $root 'tools/generate-wix-files.py')
+& python3 (Join-Path $root 'tools/generate-wixl.py')
 if ($LASTEXITCODE) { throw 'Génération WiX impossible.' }
-& wix build (Join-Path $root 'installer/Product.wxs') $filesWxs -arch x64 -o $OutputMsi
+& wixl --arch x64 -o $OutputMsi $filesWxs
 if ($LASTEXITCODE -or -not (Test-Path $OutputMsi)) { throw 'Compilation MSI impossible.' }
 $registry = (& msiinfo export $OutputMsi Registry | Out-String)
 foreach ($requiredIdentity in 'TmaCleanRoom.Connect','8F5373B8-4973-4E58-A69E-CB57AA22691C') {

@@ -22,8 +22,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y msitools unzip
-          dotnet tool install --global wix --version 7.0.0
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
       - name: Build Windows MSI on Linux
         id: build
         shell: bash
