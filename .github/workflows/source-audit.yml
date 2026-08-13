@@ -1,0 +1,14 @@
+name: Source audit
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  source-only:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject proprietary payloads and secrets
+        shell: pwsh
+        run: ./scripts/test/Test-SourceRelease.ps1

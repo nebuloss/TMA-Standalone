@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "microsoftTeamsMeetingAddinInstaller": {
+    "fileName": "MicrosoftTeamsMeetingAddinInstaller.msi",
+    "sha256": "DB20474BF9AAB25EC7196F3AEB290CE28007B527B960786E5757CF044EE80C2E",
+    "signerSubjectContains": "Microsoft Corporation",
+    "source": "MSTeams MSIX package installed through Microsoft's official Teams bootstrapper"
+  }
+}

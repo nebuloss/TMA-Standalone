@@ -1,0 +1,25 @@
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+Push-Location $root
+try {
+$tracked = @(git ls-files)
+$forbidden = @($tracked | Where-Object {
+    $_ -like 'payload/*' -or $_ -match '\.(dll|exe|msi|pdb|wixpdb|cab)$'
+})
+if ($forbidden) {
+    throw "Fichiers binaires interdits suivis par Git :`n$($forbidden -join "`n")"
+}
+$patterns = 'access_token','refresh_token','client_secret','BEGIN PRIVATE KEY'
+foreach ($pattern in $patterns) {
+    $hits = @(git grep -n -I -i $pattern -- ':!scripts/test/Test-SourceRelease.ps1' 2>$null)
+    if ($hits) { throw "Motif sensible trouvé ($pattern) :`n$($hits -join "`n")" }
+}
+foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependencies.lock.json','vendor/README.md',
+    'scripts/dependencies/Get-TmaInstaller.ps1','scripts/build/Build-Windows.ps1',
+    'scripts/build/Build-Linux.ps1','installer/Product.wxs','src/TmaCleanRoom/TmaCleanRoom.Addin.cs',
+    'src/TmaCleanRoom/TmaCleanRoom.Addin.csproj') {
+    if ($tracked -notcontains $required) { throw "Fichier de publication absent : $required" }
+}
+Write-Host 'Audit source-only réussi.' -ForegroundColor Green
+}
+finally { Pop-Location }
