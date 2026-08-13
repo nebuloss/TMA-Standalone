@@ -4,6 +4,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$PSNativeCommandUseErrorActionPreference = $false
 if ($IsWindows) { throw 'Ce script est réservé au build Linux.' }
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -35,10 +36,15 @@ if (-not $AcceptNewMicrosoftVersion -and $hash -ne $lock.microsoftTeamsMeetingAd
 
 Write-Host '==> Extraction du MSI avec msitools' -ForegroundColor Cyan
 & msiextract -C $extract $sourceMsi
-if ($LASTEXITCODE) { throw 'Extraction MSI impossible.' }
+$msiExtractExitCode = $LASTEXITCODE
 $loader = Get-ChildItem $extract -Recurse -Filter Microsoft.Teams.AddinLoader.dll |
     Where-Object FullName -Match '[/\\]x64[/\\]' | Select-Object -First 1
-if (-not $loader) { throw 'Payload x64 introuvable.' }
+if (-not $loader) {
+    throw "Payload x64 introuvable après msiextract (code $msiExtractExitCode)."
+}
+if ($msiExtractExitCode) {
+    Write-Warning "msiextract a retourné $msiExtractExitCode, mais le payload x64 a été validé."
+}
 $sourcePayload = $loader.Directory.FullName
 $required = @(
  'Microsoft.Teams.MeetingAddin.dll','Microsoft.Teams.MeetingAddin.dll.config',
