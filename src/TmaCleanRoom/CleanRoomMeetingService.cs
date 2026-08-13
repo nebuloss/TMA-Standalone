@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
 namespace TmaCleanRoom
@@ -20,7 +21,7 @@ namespace TmaCleanRoom
 
         internal static void MarkPrototype(Outlook.AppointmentItem appointment)
         {
-            appointment.PropertyAccessor.SetProperty(SchemaProperty, "1");
+            SetStringProperty(appointment, SchemaProperty, "1");
             appointment.Save();
         }
 
@@ -55,11 +56,11 @@ namespace TmaCleanRoom
         {
             if (String.IsNullOrWhiteSpace(meetingId) || String.IsNullOrWhiteSpace(joinUrl))
                 throw new ArgumentException("Meeting ID and join URL are required.");
-            appointment.PropertyAccessor.SetProperty(MeetingIdProperty, meetingId);
-            appointment.PropertyAccessor.SetProperty(JoinUrlProperty, joinUrl);
-            appointment.PropertyAccessor.SetProperty(SchemaProperty, "1");
+            SetStringProperty(appointment, MeetingIdProperty, meetingId);
+            SetStringProperty(appointment, JoinUrlProperty, joinUrl);
+            SetStringProperty(appointment, SchemaProperty, "1");
             if (!String.IsNullOrWhiteSpace(optionsUrl))
-                appointment.PropertyAccessor.SetProperty(OptionsUrlProperty, optionsUrl);
+                SetStringProperty(appointment, OptionsUrlProperty, optionsUrl);
             string existingBody = appointment.Body ?? String.Empty;
             string plainBlock = !String.IsNullOrWhiteSpace(stockText) ? stockText :
                 "____________________________________________________________\r\n" +
@@ -104,8 +105,7 @@ namespace TmaCleanRoom
             string language)
         {
             if (appointment == null) return;
-            appointment.PropertyAccessor.SetProperty(InvitationLanguageProperty,
-                language);
+            SetStringProperty(appointment, InvitationLanguageProperty, language);
             if (!HasMeeting(appointment)) return;
 
             string meetingId = GetStringProperty(appointment, MeetingIdProperty);
@@ -176,15 +176,43 @@ namespace TmaCleanRoom
             string property)
         {
             if (appointment == null) return null;
-            try { return Convert.ToString(appointment.PropertyAccessor.GetProperty(property)); }
+            Outlook.PropertyAccessor accessor = null;
+            try
+            {
+                accessor = appointment.PropertyAccessor;
+                return Convert.ToString(accessor.GetProperty(property));
+            }
             catch { return null; }
+            finally { ReleaseComObject(accessor); }
         }
 
         private static void DeleteProperty(Outlook.AppointmentItem appointment,
             string property)
         {
-            try { appointment.PropertyAccessor.DeleteProperty(property); }
+            Outlook.PropertyAccessor accessor = null;
+            try
+            {
+                accessor = appointment.PropertyAccessor;
+                accessor.DeleteProperty(property);
+            }
             catch { }
+            finally { ReleaseComObject(accessor); }
+        }
+
+        private static void SetStringProperty(Outlook.AppointmentItem appointment,
+            string property, string value)
+        {
+            if (appointment == null) throw new ArgumentNullException("appointment");
+            Outlook.PropertyAccessor accessor = null;
+            try
+            {
+                // PropertyAccessor is a separate COM object. Releasing it after each
+                // short operation prevents high-frequency ribbon callbacks from
+                // retaining RCWs until Outlook shuts down.
+                accessor = appointment.PropertyAccessor;
+                accessor.SetProperty(property, value);
+            }
+            finally { ReleaseComObject(accessor); }
         }
 
         private static void InsertHtmlWithWordEditor(
@@ -341,6 +369,13 @@ namespace TmaCleanRoom
             return value.Replace("&", "&amp;").Replace("<", "&lt;")
                 .Replace(">", "&gt;").Replace("\"", "&quot;")
                 .Replace("'", "&#39;");
+        }
+
+        private static void ReleaseComObject(object value)
+        {
+            if (value == null || !Marshal.IsComObject(value)) return;
+            try { Marshal.ReleaseComObject(value); }
+            catch (InvalidComObjectException) { }
         }
     }
 }

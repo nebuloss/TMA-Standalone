@@ -5,12 +5,18 @@ using Microsoft.Win32;
 
 namespace TmaCleanRoom
 {
+    // Thin wrapper around Office's already loaded native identity components.
+    // It intentionally does not acquire OAuth tokens or register an application.
+    // Native entry points are validated before invocation because these functions
+    // are undocumented and their ordinals/layouts may change after an Office update.
     internal static class OfficeNativeSignIn
     {
         private const int ShowUiOrdinal = 44059;
         private const int ShowUiParamsSize = 0xA0;
         private const int OsfCurrentIdentityRva = 0x288190;
         private const string ValidatedOsfVersion = "16.0.20228.20014";
+        private const string StandaloneRegistryPath = @"Software\TMA-Standalone";
+        private const string SignedOutValue = "AddinSignedOut";
 
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate int ShowUiDelegate(IntPtr parameters, out IntPtr identity);
@@ -90,6 +96,28 @@ namespace TmaCleanRoom
             }
         }
 
+        internal static bool IsStandaloneEnabled()
+        {
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(
+                StandaloneRegistryPath))
+            {
+                return key == null || Convert.ToInt32(
+                    key.GetValue(SignedOutValue, 0)) == 0;
+            }
+        }
+
+        internal static void SetStandaloneEnabled(bool enabled)
+        {
+            // This flag signs out only the standalone add-in. It deliberately does
+            // not alter Office identities, Outlook profiles, or cached credentials.
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(
+                StandaloneRegistryPath))
+            {
+                key.SetValue(SignedOutValue, enabled ? 0 : 1,
+                    RegistryValueKind.DWord);
+            }
+        }
+
         internal static string GetAccountLabel()
         {
             const string identitiesPath = @"Software\Microsoft\Office\16.0\Common\Identity\Identities";
@@ -126,6 +154,8 @@ namespace TmaCleanRoom
 
             ProcessModule loadedModule = FindLoadedModule(module);
             string version = loadedModule.FileVersionInfo.FileVersion;
+            // Unlike the exported ShowUI function, this function is addressed by an
+            // RVA. Calling it on an unvalidated build could execute unrelated code.
             if (!String.Equals(version, ValidatedOsfVersion, StringComparison.OrdinalIgnoreCase))
                 return IntPtr.Zero;
 

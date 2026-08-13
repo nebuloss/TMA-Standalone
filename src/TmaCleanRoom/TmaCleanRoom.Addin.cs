@@ -22,6 +22,8 @@ namespace TmaCleanRoom
     [ClassInterface(ClassInterfaceType.AutoDispatch)]
     public sealed class Addin : IDTExtensibility2, IRibbonExtensibility
     {
+        private const string DialogTitle = "TMA autonome";
+        private const int RibbonRepaintDelayMilliseconds = 50;
         private Outlook.Application outlook;
         private readonly List<IRibbonUI> ribbons = new List<IRibbonUI>();
         private IRibbonUI explorerRibbon;
@@ -56,17 +58,17 @@ namespace TmaCleanRoom
             if (activeExplorer != null)
             {
                 try { ((Outlook.ExplorerEvents_10_Event)activeExplorer).Activate -= Explorer_Activate; }
-                catch { }
-                try { Marshal.FinalReleaseComObject(activeExplorer); }
-                catch { }
+                catch (COMException) { }
+                catch (InvalidComObjectException) { }
+                ReleaseComObject(activeExplorer);
             }
             activeExplorer = null;
             foreach (AppointmentInspectorTracker tracker in appointmentInspectors)
                 tracker.Dispose();
             appointmentInspectors.Clear();
-            if (inspectors != null) Marshal.FinalReleaseComObject(inspectors);
+            ReleaseComObject(inspectors);
             inspectors = null;
-            if (outlook != null) Marshal.FinalReleaseComObject(outlook);
+            ReleaseComObject(outlook);
             outlook = null;
             explorerRibbon = null;
             ribbons.Clear();
@@ -280,6 +282,9 @@ namespace TmaCleanRoom
                 return String.Equals(language, "en", StringComparison.OrdinalIgnoreCase)
                     ? DrawUsFlag() : DrawFrenchFlag();
             }
+            if (control != null && control.Id.IndexOf("AccountMenu",
+                StringComparison.OrdinalIgnoreCase) >= 0)
+                return DrawAccountIcon();
             string directory = Path.GetDirectoryName(
                 Assembly.GetExecutingAssembly().Location);
             string asset = control != null && control.Id.IndexOf("MeetNow",
@@ -363,37 +368,25 @@ namespace TmaCleanRoom
         private async void CreateMeetingWithTemplate(IRibbonControl control, string templateId,
             string invitationLanguage)
         {
-            Outlook.AppointmentItem appointment = ResolveAppointment(control);
-            if (appointment == null)
+            try
             {
-                // The stock add-in marks the element as clicked, invalidates it, and
-                // then awaits its asynchronous action. Yielding here gives Office the
-                // same opportunity to query getEnabled before the Inspector opens.
-                explorerMeetingActionActive = true;
-                LegacyTeamsSchedulerBridge.Log(
-                    "Explorer meeting action queued; disabling controls");
-                InvalidateExplorerRibbon();
-                await Task.Delay(50);
-                try
+                Outlook.AppointmentItem appointment = ResolveAppointment(control);
+                if (appointment == null)
                 {
+                    // The stock add-in marks the element as clicked, invalidates it,
+                    // and then awaits its asynchronous action. Yielding here gives
+                    // Office time to repaint before the Inspector is created.
+                    explorerMeetingActionActive = true;
+                    LegacyTeamsSchedulerBridge.Log(
+                        "Explorer meeting action queued; disabling controls");
+                    InvalidateExplorerRibbon();
+                    await Task.Delay(RibbonRepaintDelayMilliseconds);
                     appointment = (Outlook.AppointmentItem)outlook.CreateItem(
                         Outlook.OlItemType.olAppointmentItem);
                     appointment.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
                     appointment.Display(false);
                     ActivateAppointmentInspector(appointment);
                 }
-                catch (Exception ex)
-                {
-                    explorerMeetingActionActive = false;
-                    InvalidateExplorerRibbon();
-                    if (!(ex is OperationCanceledException))
-                        MessageBox.Show(FormatException(ex), "TMA Clean Room",
-                            MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return;
-                }
-            }
-            try
-            {
                 if (String.IsNullOrWhiteSpace(invitationLanguage))
                     invitationLanguage = CleanRoomMeetingService.GetInvitationLanguage(
                         appointment);
@@ -415,8 +408,7 @@ namespace TmaCleanRoom
                 explorerMeetingActionActive = false;
                 InvalidateExplorerRibbon();
                 if (ex is OperationCanceledException) return;
-                MessageBox.Show(FormatException(ex), "TMA Clean Room",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowError("Meeting creation failed", ex);
             }
         }
 
@@ -435,8 +427,7 @@ namespace TmaCleanRoom
             }
             finally
             {
-                if (inspector != null && Marshal.IsComObject(inspector))
-                    Marshal.FinalReleaseComObject(inspector);
+                ReleaseComObject(inspector);
             }
         }
 
@@ -457,13 +448,11 @@ namespace TmaCleanRoom
             }
             catch (Exception ex)
             {
-                MessageBox.Show(FormatException(ex), "TMA Clean Room",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowError("Meet Now failed", ex);
             }
             finally
             {
-                if (appointment != null)
-                    Marshal.FinalReleaseComObject(appointment);
+                ReleaseComObject(appointment);
             }
         }
 
@@ -474,11 +463,26 @@ namespace TmaCleanRoom
             return current.GetType().FullName + "\r\n\r\n" + current.Message;
         }
 
+        private static void ShowError(string operation, Exception exception)
+        {
+            LegacyTeamsSchedulerBridge.LogException(operation, exception);
+            MessageBox.Show(FormatException(exception), DialogTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private static void ReleaseComObject(object value)
+        {
+            if (value == null || !Marshal.IsComObject(value)) return;
+            try { Marshal.ReleaseComObject(value); }
+            catch (InvalidComObjectException) { }
+        }
+
         public void ConnectOffice(IRibbonControl control)
         {
             try
             {
                 OfficeNativeSignIn.Show();
+                OfficeNativeSignIn.SetStandaloneEnabled(true);
                 InvalidateRibbons();
             }
             catch (Exception ex)
@@ -491,20 +495,20 @@ namespace TmaCleanRoom
 
         public bool ConnectOffice_GetVisible(IRibbonControl control)
         {
-            return !OfficeNativeSignIn.IsConnected();
+            return !IsStandaloneConnected();
         }
 
         public bool CreateMeeting_GetVisible(IRibbonControl control)
         {
-            return OfficeNativeSignIn.IsConnected() &&
+            return IsStandaloneConnected() &&
                 !CleanRoomMeetingService.HasMeeting(ResolveAppointment(control));
         }
 
         public bool ExplorerMeeting_GetVisible(IRibbonControl control)
-        { return OfficeNativeSignIn.IsConnected(); }
+        { return IsStandaloneConnected(); }
 
         public bool Language_GetVisible(IRibbonControl control)
-        { return OfficeNativeSignIn.IsConnected(); }
+        { return IsStandaloneConnected(); }
 
         public bool MeetingActions_GetVisible(IRibbonControl control)
         { return CleanRoomMeetingService.HasMeeting(ResolveAppointment(control)); }
@@ -532,12 +536,26 @@ namespace TmaCleanRoom
 
         public bool OfficeAccount_GetVisible(IRibbonControl control)
         {
-            return OfficeNativeSignIn.IsConnected();
+            return IsStandaloneConnected();
         }
 
         public string OfficeAccount_GetLabel(IRibbonControl control)
         {
-            return "Connecte : " + OfficeNativeSignIn.GetAccountLabel();
+            return OfficeNativeSignIn.GetAccountLabel();
+        }
+
+        public void DisconnectStandalone(IRibbonControl control)
+        {
+            OfficeNativeSignIn.SetStandaloneEnabled(false);
+            LegacyTeamsSchedulerBridge.Log(
+                "Standalone account disconnected; Office identity unchanged");
+            InvalidateRibbons();
+        }
+
+        private static bool IsStandaloneConnected()
+        {
+            return OfficeNativeSignIn.IsStandaloneEnabled() &&
+                OfficeNativeSignIn.IsConnected();
         }
 
         private static Bitmap DrawFrenchFlag()
@@ -584,20 +602,41 @@ namespace TmaCleanRoom
             return bitmap;
         }
 
+        private static Bitmap DrawAccountIcon()
+        {
+            var bitmap = new Bitmap(32, 32);
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            using (var background = new SolidBrush(Color.FromArgb(91, 95, 199)))
+            using (var foreground = new SolidBrush(Color.White))
+            {
+                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                graphics.Clear(Color.Transparent);
+                graphics.FillEllipse(background, 2, 2, 28, 28);
+                graphics.FillEllipse(foreground, 11, 7, 10, 10);
+                graphics.FillEllipse(foreground, 7, 18, 18, 11);
+            }
+            return bitmap;
+        }
+
         private Outlook.AppointmentItem ResolveAppointment(IRibbonControl control)
         {
+            // Ribbon callbacks always provide their owning Inspector as Context.
+            // Falling back to Application.ActiveInspector used to create an extra
+            // RCW and could also target the wrong window during focus transitions.
             object context = control == null ? null : control.Context;
             Outlook.Inspector inspector = context as Outlook.Inspector;
             if (inspector != null) return inspector.CurrentItem as Outlook.AppointmentItem;
-            if (outlook == null) return null;
-            Outlook.Inspector active = outlook.ActiveInspector();
-            return active == null ? null : active.CurrentItem as Outlook.AppointmentItem;
+            return null;
         }
 
         private const string ExplorerRibbon =
             "<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='ExplorerRibbon_Load'>" +
             "<ribbon><tabs><tab idMso='TabCalendar'><group id='TmaCleanRoom.Calendar' label='TMA autonome' insertAfterMso='GroupCalendarNew'>" +
             "<button id='TmaCleanRoom.Connect' label='Se connecter' size='large' getImage='Ribbon_GetImage' getVisible='ConnectOffice_GetVisible' onAction='ConnectOffice'/>" +
+            "<menu id='TmaCleanRoom.AccountMenu' size='large' getLabel='OfficeAccount_GetLabel' getImage='Ribbon_GetImage' getVisible='OfficeAccount_GetVisible'>" +
+            "<button id='TmaCleanRoom.SwitchAccount' label='Changer de compte' onAction='ConnectOffice'/>" +
+            "<button id='TmaCleanRoom.Disconnect' label='Déconnecter TMA autonome' onAction='DisconnectStandalone'/>" +
+            "</menu>" +
             "<button id='TmaCleanRoom.MeetNow' label='Réunion instantanée' size='large' keytip='MN' getImage='Ribbon_GetImage' getVisible='ExplorerMeeting_GetVisible' getEnabled='ExplorerMeeting_GetEnabled' onAction='MeetNow'/>" +
             "<splitButton id='TmaCleanRoom.MeetingSplit' size='large' getVisible='ExplorerMeeting_GetVisible' getEnabled='ExplorerMeeting_GetEnabled'>" +
             "<button id='TmaCleanRoom.Create' label='Réunion Teams' keytip='TM' getImage='Ribbon_GetImage' onAction='CreateMeeting'/>" +

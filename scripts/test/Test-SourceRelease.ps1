@@ -23,6 +23,26 @@ foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependenc
     'src/TmaCleanRoom/TmaCleanRoom.Addin.csproj') {
     if ($tracked -notcontains $required) { throw "Fichier de publication absent : $required" }
 }
+
+# Both localized templates are runtime inputs, not embedded resources. Validate
+# their contract here so a design edit cannot produce a successful but unusable MSI.
+$templateTokens = '{{JOIN_URL}}','{{MEETING_ID}}','{{TEAMS_ICON}}',
+    '{{PASSCODE_ROW}}','{{OPTIONS_BLOCK}}'
+foreach ($templatePath in 'src/TmaCleanRoom/Templates/MeetingInvite.html',
+    'src/TmaCleanRoom/Templates/MeetingInvite.en-US.html') {
+    if (-not (Test-Path -LiteralPath $templatePath)) {
+        throw "Template d'invitation absent : $templatePath"
+    }
+    $template = Get-Content -LiteralPath $templatePath -Raw
+    foreach ($token in $templateTokens) {
+        if (-not $template.Contains($token)) {
+            throw "Marqueur $token absent de $templatePath"
+        }
+    }
+    if ($template -notmatch 'data-tma-clean-room="meeting"') {
+        throw "Marqueur racine TMA absent de $templatePath"
+    }
+}
 Write-Host 'Audit source-only réussi.' -ForegroundColor Green
 $global:LASTEXITCODE = 0
 }

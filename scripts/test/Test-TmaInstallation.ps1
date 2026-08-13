@@ -12,6 +12,9 @@ $results['CLR in-process server'] = (Get-ItemProperty $inprocKey -ErrorAction Si
 $codeBase = (Get-ItemProperty $inprocKey -ErrorAction SilentlyContinue).CodeBase
 $results['Installed add-in DLL'] = $codeBase -and (Test-Path ([Uri]$codeBase).LocalPath)
 $results['Local Teams scheduler'] = Test-Path "$env:ProgramFiles\TMA-Standalone\Microsoft.Teams.MeetingAddin.dll"
+$results['French invitation template'] = Test-Path "$env:ProgramFiles\TMA-Standalone\Templates\MeetingInvite.html"
+$results['English invitation template'] = Test-Path "$env:ProgramFiles\TMA-Standalone\Templates\MeetingInvite.en-US.html"
+$results['Meeting icon asset'] = Test-Path "$env:ProgramFiles\TMA-Standalone\Assets\NewMeeting_Large_96.png"
 $results['Stock CLSID untouched'] = (Get-ItemProperty 'HKCU:\Software\Classes\CLSID\{19A6E644-14E6-4A60-B8D7-DD20610A871D}\InprocServer32' -ErrorAction SilentlyContinue).'(default)' -notlike '*TMA-Standalone*'
 $results.GetEnumerator() | ForEach-Object {
     [pscustomobject]@{ Check=$_.Key; Result=if ($_.Value) {'OK'} else {'FAIL'} }

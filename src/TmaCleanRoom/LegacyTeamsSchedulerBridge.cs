@@ -16,9 +16,11 @@ namespace TmaCleanRoom
     {
         private const string StockClsid = "{19A6E644-14E6-4A60-B8D7-DD20610A871D}";
         private static string assemblyDirectory;
+        private static Assembly teamsAssembly;
         private static object teamsApplication;
         private static object teamsScheduler;
         private static readonly object initializationLock = new object();
+        private static readonly object logLock = new object();
 
         internal sealed class Result
         {
@@ -351,19 +353,25 @@ namespace TmaCleanRoom
         {
             try
             {
-                string directory = Path.Combine(Environment.GetFolderPath(
-                    Environment.SpecialFolder.LocalApplicationData), "TMA-CleanRoom");
-                Directory.CreateDirectory(directory);
-                string path = Path.Combine(directory, "teams-bridge.log");
-                if (File.Exists(path) && new FileInfo(path).Length >= 2 * 1024 * 1024)
+                // Warm-up and ribbon actions can log from different threads. Keep
+                // rotation and append atomic so one writer cannot move the file while
+                // another writer is opening it.
+                lock (logLock)
                 {
-                    string previous = Path.Combine(directory, "teams-bridge.previous.log");
-                    if (File.Exists(previous)) File.Delete(previous);
-                    File.Move(path, previous);
+                    string directory = Path.Combine(Environment.GetFolderPath(
+                        Environment.SpecialFolder.LocalApplicationData), "TMA-CleanRoom");
+                    Directory.CreateDirectory(directory);
+                    string path = Path.Combine(directory, "teams-bridge.log");
+                    if (File.Exists(path) && new FileInfo(path).Length >= 2 * 1024 * 1024)
+                    {
+                        string previous = Path.Combine(directory, "teams-bridge.previous.log");
+                        if (File.Exists(previous)) File.Delete(previous);
+                        File.Move(path, previous);
+                    }
+                    File.AppendAllText(path,
+                        DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " [" +
+                        AppDomain.CurrentDomain.FriendlyName + "] " + message + Environment.NewLine);
                 }
-                File.AppendAllText(path,
-                    DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " [" +
-                    AppDomain.CurrentDomain.FriendlyName + "] " + message + Environment.NewLine);
             }
             catch { }
         }
@@ -453,31 +461,45 @@ namespace TmaCleanRoom
 
         private static Assembly LoadTeamsAssembly()
         {
-            string localDirectory = Path.GetDirectoryName(
-                Assembly.GetExecutingAssembly().Location);
-            string localMeetingAddin = Path.Combine(localDirectory,
-                "Microsoft.Teams.MeetingAddin.dll");
-            if (File.Exists(localMeetingAddin))
+            if (teamsAssembly != null) return teamsAssembly;
+            lock (initializationLock)
             {
-                assemblyDirectory = localDirectory;
-                Log("Using standalone Teams payload: " + assemblyDirectory);
+                if (teamsAssembly != null) return teamsAssembly;
+                string localDirectory = Path.GetDirectoryName(
+                    Assembly.GetExecutingAssembly().Location);
+                string localMeetingAddin = Path.Combine(localDirectory,
+                    "Microsoft.Teams.MeetingAddin.dll");
+                if (File.Exists(localMeetingAddin))
+                {
+                    assemblyDirectory = localDirectory;
+                    Log("Using standalone Teams payload: " + assemblyDirectory);
+                }
+                else
+                {
+                    string loader = ReadStockLoaderPath();
+                    assemblyDirectory = Path.GetDirectoryName(loader);
+                    Log("Using installed Teams payload fallback: " + assemblyDirectory);
+                }
+                string path = Path.Combine(assemblyDirectory,
+                    "Microsoft.Teams.MeetingAddin.dll");
+                if (!File.Exists(path))
+                    throw new FileNotFoundException(
+                        "DLL Meeting Add-in Teams introuvable.", path);
+
+                // Register one resolver for the lifetime of the AppDomain. The old
+                // implementation added a new anonymous handler on every meeting.
+                AppDomain.CurrentDomain.AssemblyResolve += ResolveTeamsDependency;
+                teamsAssembly = Assembly.LoadFrom(path);
+                return teamsAssembly;
             }
-            else
-            {
-                string loader = ReadStockLoaderPath();
-                assemblyDirectory = Path.GetDirectoryName(loader);
-                Log("Using installed Teams payload fallback: " + assemblyDirectory);
-            }
-            string path = Path.Combine(assemblyDirectory, "Microsoft.Teams.MeetingAddin.dll");
-            if (!File.Exists(path)) throw new FileNotFoundException("DLL Meeting Add-in Teams introuvable.", path);
-            ResolveEventHandler resolver = delegate(object sender, ResolveEventArgs args)
-            {
-                string dependency = Path.Combine(assemblyDirectory,
-                    new AssemblyName(args.Name).Name + ".dll");
-                return File.Exists(dependency) ? Assembly.LoadFrom(dependency) : null;
-            };
-            AppDomain.CurrentDomain.AssemblyResolve += resolver;
-            return Assembly.LoadFrom(path);
+        }
+
+        private static Assembly ResolveTeamsDependency(object sender,
+            ResolveEventArgs args)
+        {
+            string simpleName = new AssemblyName(args.Name).Name;
+            string dependency = Path.Combine(assemblyDirectory, simpleName + ".dll");
+            return File.Exists(dependency) ? Assembly.LoadFrom(dependency) : null;
         }
 
         private static string ReadStockLoaderPath()
