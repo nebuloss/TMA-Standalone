@@ -1,5 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$wixlGenerator = Get-Content -LiteralPath (Join-Path $root 'tools\generate-wixl.py') -Raw
+if ($wixlGenerator -notmatch '<MajorUpgrade Schedule="afterInstallInitialize"') {
+    throw 'MajorUpgrade must remove the previous product before installing stable components.'
+}
 Push-Location $root
 try {
 $tracked = @(git ls-files)
