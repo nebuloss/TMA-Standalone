@@ -63,14 +63,9 @@ New-Item -ItemType Directory (Join-Path $payload 'Assets') | Out-Null
 Copy-Item (Join-Path $sourcePayload 'Assets/NewMeeting_Large_96.png') (Join-Path $payload 'Assets')
 
 Write-Host '==> Compilation .NET Framework reproductible' -ForegroundColor Cyan
-& dotnet build (Join-Path $root 'src/TmaCleanRoom/TmaCleanRoom.Addin.csproj') -c Release `
-    -o $addin --nologo -p:ContinuousIntegrationBuild=true
-if ($LASTEXITCODE) { throw 'Compilation du complément impossible.' }
-Copy-Item (Join-Path $addin 'TmaCleanRoom.Addin.dll') $payload
-New-Item -ItemType Directory (Join-Path $payload 'Templates') | Out-Null
-Copy-Item (Join-Path $root 'src/TmaCleanRoom/Templates/*.html') (Join-Path $payload 'Templates')
-Copy-Item (Join-Path $payload 'Assets/NewMeeting_Large_96.png') `
-    (Join-Path $payload 'Assets/MeetNow_Large_96.png')
+& (Join-Path $root 'scripts/dependencies/Get-OfficePia.ps1')
+& (Join-Path $root 'scripts/build/Build-Managed.ps1') -OutputDirectory $addin -PayloadDirectory $payload
+Copy-Item (Join-Path $addin '*') $payload -Recurse -Force
 
 Write-Host '==> Génération WiX et compilation MSI' -ForegroundColor Cyan
 $env:TMA_PAYLOAD = $payload

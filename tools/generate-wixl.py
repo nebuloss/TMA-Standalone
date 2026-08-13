@@ -77,4 +77,3 @@ lines += ['</Directory></Directory></Directory>', '<Feature Id="MainFeature" Tit
 lines += [f'<ComponentRef Id="{component}" />' for component in components]
 lines += ['</Feature>', '</Product>', '</Wix>']
 output.write_text('\n'.join(lines) + '\n', encoding='utf-8')
-

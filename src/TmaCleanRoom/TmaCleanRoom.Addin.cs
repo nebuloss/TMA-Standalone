@@ -26,6 +26,7 @@ namespace TmaCleanRoom
         private Outlook.Inspectors inspectors;
         private readonly List<Outlook.Inspector> appointmentInspectors =
             new List<Outlook.Inspector>();
+        private Timer inspectorCloseTimer;
 
         public void OnConnection(object application, ext_ConnectMode connectMode,
             object addInInst, ref Array custom)
@@ -99,6 +100,21 @@ namespace TmaCleanRoom
 
         private void AppointmentInspector_Close()
         {
+            if (inspectorCloseTimer != null) inspectorCloseTimer.Dispose();
+            inspectorCloseTimer = new Timer { Interval = 300 };
+            inspectorCloseTimer.Tick += delegate
+            {
+                inspectorCloseTimer.Stop();
+                inspectorCloseTimer.Dispose();
+                inspectorCloseTimer = null;
+                CleanupClosedAppointmentInspectors();
+                if (ribbon != null) ribbon.Invalidate();
+            };
+            inspectorCloseTimer.Start();
+        }
+
+        private void CleanupClosedAppointmentInspectors()
+        {
             for (int index = appointmentInspectors.Count - 1; index >= 0; index--)
             {
                 Outlook.Inspector inspector = appointmentInspectors[index];
@@ -111,7 +127,6 @@ namespace TmaCleanRoom
                 appointmentInspectors.RemoveAt(index);
                 Marshal.FinalReleaseComObject(inspector);
             }
-            if (ribbon != null) ribbon.Invalidate();
         }
 
         public bool ExplorerMeeting_GetEnabled(IRibbonControl control)

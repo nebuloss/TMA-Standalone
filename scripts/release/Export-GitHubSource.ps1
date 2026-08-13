@@ -4,17 +4,19 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $Destination) { $Destination = Join-Path $root 'github-export' }
 if (Test-Path $Destination) { throw "Le repertoire de destination existe deja : $Destination" }
 $allowed = @(
-    '.gitignore','dependencies.lock.json','vendor\README.md','README.md','LICENSE','NOTICE.md',
+    '.gitignore','global.json','dependencies.lock.json','vendor\README.md','README.md','LICENSE','NOTICE.md',
     'SECURITY.md','CONTRIBUTING.md','tools\generate-wixl.py',
     '.github\workflows\source-audit.yml','.github\workflows\linux-build.yml',
-    'scripts\build\Build-Legacy.ps1','scripts\build\Build-CleanRoom.ps1',
+    'scripts\build\Build-Legacy.ps1','scripts\build\Build-Managed.ps1',
     'scripts\build\Build-Windows.ps1','scripts\build\Build-Linux.ps1',
-    'scripts\dependencies\Get-TmaInstaller.ps1','scripts\dependencies\Get-WixlTools.ps1','scripts\dev\Register-Dev.ps1',
+    'scripts\dependencies\Get-TmaInstaller.ps1','scripts\dependencies\Get-WixlTools.ps1',
+    'scripts\dependencies\Get-DotNetSdk.ps1','scripts\dependencies\Get-OfficePia.ps1','scripts\dev\Register-Dev.ps1',
     'scripts\dev\Unregister-Dev.ps1','scripts\test\Test-TmaInstallation.ps1',
     'scripts\test\Test-SourceRelease.ps1','scripts\release\Export-GitHubSource.ps1',
     'src\TmaCleanRoom\CleanRoomMeetingService.cs','src\TmaCleanRoom\LegacyTeamsSchedulerBridge.cs',
     'src\TmaCleanRoom\OfficeNativeSignIn.cs','src\TmaCleanRoom\TmaCleanRoom.Addin.cs',
-    'src\TmaCleanRoom\TmaCleanRoom.Addin.csproj','src\TmaCleanRoom\ExtensibilityInterop.cs',
+    'src\TmaCleanRoom\TmaCleanRoom.Addin.csproj','src\TmaCleanRoom\packages.lock.json',
+    'src\TmaCleanRoom\Assets\NewMeeting_Large_96.png','src\TmaCleanRoom\Assets\MeetNow_Large_96.png',
     'src\TmaCleanRoom\Templates\MeetingInvite.html','src\TmaCleanRoom\Templates\MeetingInvite.en-US.html'
 )
 New-Item -ItemType Directory -Path $Destination | Out-Null

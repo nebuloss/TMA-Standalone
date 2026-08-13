@@ -17,11 +17,11 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '8.0.424'
       - name: Install lightweight build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y msitools wixl unzip
+          sudo apt-get install -y msitools wixl unzip p7zip-full cabextract
       - name: Build Windows MSI on Linux
         id: build
         shell: bash

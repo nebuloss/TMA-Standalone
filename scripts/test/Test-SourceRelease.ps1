@@ -17,7 +17,8 @@ foreach ($pattern in $patterns) {
     if ($hits) { throw "Motif sensible trouvé ($pattern) :`n$($hits -join "`n")" }
 }
 foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependencies.lock.json','vendor/README.md',
-    'scripts/dependencies/Get-TmaInstaller.ps1','scripts/build/Build-Windows.ps1',
+    'global.json','scripts/dependencies/Get-TmaInstaller.ps1','scripts/dependencies/Get-OfficePia.ps1',
+    'scripts/dependencies/Get-DotNetSdk.ps1','scripts/build/Build-Managed.ps1','scripts/build/Build-Windows.ps1',
     'scripts/build/Build-Linux.ps1','src/TmaCleanRoom/TmaCleanRoom.Addin.cs',
     'src/TmaCleanRoom/TmaCleanRoom.Addin.csproj') {
     if ($tracked -notcontains $required) { throw "Fichier de publication absent : $required" }

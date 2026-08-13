@@ -20,4 +20,5 @@ vendor/*
 __pycache__/
 *.pyc
 .tools/
-
+**/obj/
+_work-*.log

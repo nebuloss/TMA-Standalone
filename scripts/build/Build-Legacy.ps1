@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$MsiPath,
     [string]$OutputMsi,
-    [string]$WixlDirectory
+    [string]$WixlDirectory,
+    [string]$DotNet = 'dotnet'
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,7 +50,7 @@ $actualHash = (Get-FileHash -LiteralPath $MsiPath -Algorithm SHA256).Hash
 if ($actualHash -ne $lock.microsoftTeamsMeetingAddinInstaller.sha256) {
     Write-Warning "Version Microsoft non verrouillée : build valide mais non reproductible à l'identique."
 }
-foreach ($path in @($MsiPath, (Join-Path $root "scripts\build\Build-CleanRoom.ps1"))) {
+foreach ($path in @($MsiPath, (Join-Path $root "scripts\build\Build-Managed.ps1"))) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Fichier requis introuvable : $path" }
 }
 if (-not $WixlDirectory -or -not (Test-Path (Join-Path $WixlDirectory 'wixl.exe'))) { throw "wixl portable absent." }
@@ -103,8 +104,9 @@ foreach ($name in 'Microsoft.Teams.MeetingAddin.dll','Microsoft.Teams.AuthLib.dl
 }
 
 Step "Compilation du complément COM indépendant"
-& (Join-Path $root "scripts\build\Build-CleanRoom.ps1") `
-    -OutputDirectory $cleanRoomOutput -PayloadDirectory $payload
+& (Join-Path $root "scripts\dependencies\Get-OfficePia.ps1")
+& (Join-Path $root "scripts\build\Build-Managed.ps1") `
+    -OutputDirectory $cleanRoomOutput -PayloadDirectory $payload -DotNet $DotNet
 if (-not (Test-Path (Join-Path $cleanRoomOutput "TmaCleanRoom.Addin.dll"))) { throw "DLL clean-room non produite." }
 Copy-Item (Join-Path $cleanRoomOutput '*') $payload -Recurse -Force
 

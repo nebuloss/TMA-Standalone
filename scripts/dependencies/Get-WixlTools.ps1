@@ -27,7 +27,7 @@ try {
   if ($LASTEXITCODE) { throw "Extraction impossible : $file" }
  }
  New-Item -ItemType Directory $Destination -Force | Out-Null
- $binaries = 'wixl.exe','msiinfo.exe','libglib-2.0-0.dll','libgio-2.0-0.dll',
+ $binaries = 'wixl.exe','msiinfo.exe','msiextract.exe','libglib-2.0-0.dll','libgio-2.0-0.dll',
   'libgcab-1.0-0.dll','libintl-8.dll','libgobject-2.0-0.dll','libxml2-16.dll',
   'libmsi-1.0-0.dll','zlib1.dll','libiconv-2.dll','libffi-8.dll',
   'libgsf-1-114.dll','libpcre2-8-0.dll','libgmodule-2.0-0.dll','libbz2-1.dll'
@@ -36,4 +36,3 @@ try {
 }
 finally { Remove-Item $temporary -Recurse -Force -ErrorAction SilentlyContinue }
 Write-Host "wixl portable prêt : $Destination" -ForegroundColor Green
-
