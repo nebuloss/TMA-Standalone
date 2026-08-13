@@ -16,6 +16,14 @@ foreach ($pattern in $patterns) {
     if ($grepExitCode -notin 0,1) { throw "git grep a échoué avec le code $grepExitCode." }
     if ($hits) { throw "Motif sensible trouvé ($pattern) :`n$($hits -join "`n")" }
 }
+$nativeIdentitySource = Get-Content 'src/TmaCleanRoom/OfficeNativeSignIn.cs' -Raw
+foreach ($forbiddenNativeIdentityPattern in 'ValidatedOsfVersion',
+    'OsfCurrentIdentityRva','ShowUiOrdinal','GetCurrentOfficeIdentity',
+    'Marshal.WriteInt64(parameters','Marshal.WriteByte(parameters') {
+    if ($nativeIdentitySource.Contains($forbiddenNativeIdentityPattern)) {
+        throw "Dépendance Office versionnée interdite : $forbiddenNativeIdentityPattern"
+    }
+}
 foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependencies.lock.json','vendor/README.md',
     'global.json','scripts/dependencies/Get-TmaInstaller.ps1','scripts/dependencies/Get-OfficePia.ps1',
     'scripts/dependencies/Get-DotNetSdk.ps1','scripts/build/Build-Managed.ps1','scripts/build/Build-Windows.ps1',

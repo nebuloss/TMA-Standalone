@@ -541,7 +541,7 @@ namespace TmaCleanRoom
 
         public string OfficeAccount_GetLabel(IRibbonControl control)
         {
-            return OfficeNativeSignIn.GetAccountLabel();
+            return GetOutlookAccountLabel() ?? "Compte Outlook";
         }
 
         public bool Ribbon_AlwaysDisabled(IRibbonControl control)
@@ -557,10 +557,46 @@ namespace TmaCleanRoom
             InvalidateRibbons();
         }
 
-        private static bool IsStandaloneConnected()
+        private bool IsStandaloneConnected()
         {
             return OfficeNativeSignIn.IsStandaloneEnabled() &&
-                OfficeNativeSignIn.IsConnected();
+                !String.IsNullOrWhiteSpace(GetOutlookAccountLabel());
+        }
+
+        private string GetOutlookAccountLabel()
+        {
+            Outlook.NameSpace session = null;
+            Outlook.Accounts accounts = null;
+            try
+            {
+                if (outlook == null) return null;
+                session = outlook.Session;
+                accounts = session.Accounts;
+                for (int index = 1; index <= accounts.Count; index++)
+                {
+                    Outlook.Account account = null;
+                    try
+                    {
+                        account = accounts[index];
+                        string address = account == null ? null : account.SmtpAddress;
+                        if (!String.IsNullOrWhiteSpace(address)) return address;
+                    }
+                    catch (COMException) { }
+                    finally { ReleaseComObject(account); }
+                }
+                return null;
+            }
+            catch (COMException exception)
+            {
+                LegacyTeamsSchedulerBridge.Log(
+                    "Outlook account lookup failed: " + exception.ErrorCode);
+                return null;
+            }
+            finally
+            {
+                ReleaseComObject(accounts);
+                ReleaseComObject(session);
+            }
         }
 
         private static Bitmap DrawFrenchFlag()

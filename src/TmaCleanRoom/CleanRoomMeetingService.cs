@@ -10,6 +10,10 @@ namespace TmaCleanRoom
 {
     internal static class CleanRoomMeetingService
     {
+        // Values from Word.WdCollapseDirection. Dynamic Word dispatch is used in
+        // this class, so named constants keep the Office PIA out of the runtime MSI.
+        private const int WordCollapseEnd = 0;
+        private const int WordCollapseStart = 1;
         private const string PropertyBase =
             "http://schemas.microsoft.com/mapi/string/{9A5B5D75-42A7-4EF1-98BE-8B4B70944E89}/";
         internal const string MeetingIdProperty = PropertyBase + "TmaCleanRoomMeetingId";
@@ -236,14 +240,14 @@ namespace TmaCleanRoom
                     dynamic wordDocument = inspector.WordEditor;
                     dynamic range = wordDocument.Content;
                     string existingText = Convert.ToString(range.Text);
-                    range.Collapse(1); // Word.WdCollapseDirection.wdCollapseStart
+                    range.Collapse(WordCollapseStart);
                     if (!String.IsNullOrWhiteSpace(existingText == null ? null :
                         existingText.Trim('\r', '\n', '\a', ' ')))
                     {
                         // Outlook a déjà inséré la signature au moment de Display().
                         // Le bloc de réunion est ajouté avant celle-ci sans la remplacer.
                         range.InsertParagraphBefore();
-                        range.Collapse(1);
+                        range.Collapse(WordCollapseStart);
                     }
                     // Word defaults Attachment to true when optional arguments are
                     // omitted. With a dynamic COM dispatch, values must be passed
@@ -280,9 +284,9 @@ namespace TmaCleanRoom
                     "Microsoft", "Signatures", signatureName + ".htm");
                 if (!File.Exists(signaturePath)) return;
                 dynamic signatureRange = wordDocument.Content;
-                signatureRange.Collapse(0);
+                signatureRange.Collapse(WordCollapseEnd);
                 signatureRange.InsertParagraphAfter();
-                signatureRange.Collapse(0);
+                signatureRange.Collapse(WordCollapseEnd);
                 signatureRange.InsertFile(signaturePath, Type.Missing,
                     false, false, false);
                 LegacyTeamsSchedulerBridge.Log("Outlook signature inserted: " + signatureName);

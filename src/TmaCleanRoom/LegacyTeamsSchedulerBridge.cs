@@ -15,6 +15,8 @@ namespace TmaCleanRoom
     internal static class LegacyTeamsSchedulerBridge
     {
         private const string StockClsid = "{19A6E644-14E6-4A60-B8D7-DD20610A871D}";
+        private const int AccountDiscoveryDelayMilliseconds = 250;
+        private const int TelemetryDataCategoryRequiredServiceData = 1;
         private static string assemblyDirectory;
         private static Assembly teamsAssembly;
         private static object teamsApplication;
@@ -55,7 +57,7 @@ namespace TmaCleanRoom
                             MethodInfo loadAll = RequiredMethod(serviceType, "LoadAllUsers", 0);
                             for (int attempt = 0; attempt < 40; attempt++)
                             {
-                                Thread.Sleep(250);
+                                Thread.Sleep(AccountDiscoveryDelayMilliseconds);
                                 if (attempt == 3 || attempt == 11 || attempt == 23)
                                     loadAll.Invoke(service, null);
                                 args[0] = null;
@@ -123,7 +125,7 @@ namespace TmaCleanRoom
                     "LoadAllUsers", 0);
                 for (int attempt = 0; attempt < 40; attempt++)
                 {
-                    Thread.Sleep(250);
+                    Thread.Sleep(AccountDiscoveryDelayMilliseconds);
                     if (attempt == 3 || attempt == 11 || attempt == 23)
                     {
                         loadAllUsers.Invoke(accountService, null);
@@ -456,7 +458,8 @@ namespace TmaCleanRoom
             Type category = RequiredType(assembly,
                 "Microsoft.Teams.MeetingAddin.Telemetry.DataCategory");
             MethodInfo create = RequiredMethod(manager, "CreateContext", 2);
-            return create.Invoke(null, new[] { "TmaCleanRoom.CreateMeeting", Enum.ToObject(category, 1) });
+            return create.Invoke(null, new[] { "TmaCleanRoom.CreateMeeting",
+                Enum.ToObject(category, TelemetryDataCategoryRequiredServiceData) });
         }
 
         private static Assembly LoadTeamsAssembly()
