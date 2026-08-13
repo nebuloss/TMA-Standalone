@@ -21,7 +21,7 @@ jobs:
       - name: Install lightweight build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y msitools unzip
+          sudo apt-get install -y msitools wixl unzip
       - name: Build Windows MSI on Linux
         id: build
         shell: bash
