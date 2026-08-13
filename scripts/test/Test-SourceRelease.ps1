@@ -12,6 +12,8 @@ if ($forbidden) {
 $patterns = 'access_token','refresh_token','client_secret','BEGIN PRIVATE KEY'
 foreach ($pattern in $patterns) {
     $hits = @(git grep -n -I -i $pattern -- ':!scripts/test/Test-SourceRelease.ps1' 2>$null)
+    $grepExitCode = $LASTEXITCODE
+    if ($grepExitCode -notin 0,1) { throw "git grep a échoué avec le code $grepExitCode." }
     if ($hits) { throw "Motif sensible trouvé ($pattern) :`n$($hits -join "`n")" }
 }
 foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependencies.lock.json','vendor/README.md',
@@ -21,5 +23,6 @@ foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependenc
     if ($tracked -notcontains $required) { throw "Fichier de publication absent : $required" }
 }
 Write-Host 'Audit source-only réussi.' -ForegroundColor Green
+$global:LASTEXITCODE = 0
 }
 finally { Pop-Location }

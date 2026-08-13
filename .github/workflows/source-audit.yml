@@ -8,7 +8,7 @@ jobs:
   source-only:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Reject proprietary payloads and secrets
         shell: pwsh
         run: ./scripts/test/Test-SourceRelease.ps1
