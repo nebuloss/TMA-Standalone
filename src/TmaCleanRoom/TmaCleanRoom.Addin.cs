@@ -24,9 +24,8 @@ namespace TmaCleanRoom
         private Outlook.Application outlook;
         private IRibbonUI ribbon;
         private Outlook.Inspectors inspectors;
-        private readonly List<Outlook.Inspector> appointmentInspectors =
-            new List<Outlook.Inspector>();
-        private Timer inspectorCloseTimer;
+        private readonly List<AppointmentInspectorTracker> appointmentInspectors =
+            new List<AppointmentInspectorTracker>();
 
         public void OnConnection(object application, ext_ConnectMode connectMode,
             object addInInst, ref Array custom)
@@ -45,12 +44,8 @@ namespace TmaCleanRoom
         {
             if (inspectors != null)
                 inspectors.NewInspector -= Inspectors_NewInspector;
-            foreach (Outlook.Inspector inspector in appointmentInspectors)
-            {
-                try { ((Outlook.InspectorEvents_10_Event)inspector).Close -= AppointmentInspector_Close; }
-                catch { }
-                Marshal.FinalReleaseComObject(inspector);
-            }
+            foreach (AppointmentInspectorTracker tracker in appointmentInspectors)
+                tracker.Dispose();
             appointmentInspectors.Clear();
             if (inspectors != null) Marshal.FinalReleaseComObject(inspectors);
             inspectors = null;
@@ -94,56 +89,53 @@ namespace TmaCleanRoom
             if (inspector == null) return;
             object item = inspector.CurrentItem;
             if (!(item is Outlook.AppointmentItem)) return;
-            ((Outlook.InspectorEvents_10_Event)inspector).Close += AppointmentInspector_Close;
-            appointmentInspectors.Add(inspector);
+            appointmentInspectors.Add(new AppointmentInspectorTracker(this, inspector));
         }
 
-        private void AppointmentInspector_Close()
+        private void AppointmentInspector_Close(AppointmentInspectorTracker tracker)
         {
-            if (inspectorCloseTimer != null) inspectorCloseTimer.Dispose();
-            inspectorCloseTimer = new Timer { Interval = 300 };
-            inspectorCloseTimer.Tick += delegate
-            {
-                inspectorCloseTimer.Stop();
-                inspectorCloseTimer.Dispose();
-                inspectorCloseTimer = null;
-                CleanupClosedAppointmentInspectors();
-                if (ribbon != null) ribbon.Invalidate();
-            };
-            inspectorCloseTimer.Start();
-        }
-
-        private void CleanupClosedAppointmentInspectors()
-        {
-            for (int index = appointmentInspectors.Count - 1; index >= 0; index--)
-            {
-                Outlook.Inspector inspector = appointmentInspectors[index];
-                bool closed;
-                try { closed = inspector.CurrentItem == null; }
-                catch (COMException) { closed = true; }
-                if (!closed) continue;
-                try { ((Outlook.InspectorEvents_10_Event)inspector).Close -= AppointmentInspector_Close; }
-                catch { }
-                appointmentInspectors.RemoveAt(index);
-                Marshal.FinalReleaseComObject(inspector);
-            }
+            appointmentInspectors.Remove(tracker);
+            tracker.Dispose();
+            if (ribbon != null) ribbon.Invalidate();
         }
 
         public bool ExplorerMeeting_GetEnabled(IRibbonControl control)
         {
-            if (inspectors == null) return true;
-            for (int index = 1; index <= inspectors.Count; index++)
+            return appointmentInspectors.Count == 0;
+        }
+
+        private sealed class AppointmentInspectorTracker : IDisposable
+        {
+            private Addin owner;
+            private Outlook.Inspector inspector;
+
+            internal AppointmentInspectorTracker(Addin owner, Outlook.Inspector inspector)
             {
-                Outlook.Inspector inspector;
+                this.owner = owner;
+                this.inspector = inspector;
+                ((Outlook.InspectorEvents_10_Event)inspector).Close += Inspector_Close;
+            }
+
+            private void Inspector_Close()
+            {
+                if (owner != null) owner.AppointmentInspector_Close(this);
+            }
+
+            public void Dispose()
+            {
+                Outlook.Inspector current = inspector;
+                inspector = null;
+                owner = null;
+                if (current == null) return;
+                try { ((Outlook.InspectorEvents_10_Event)current).Close -= Inspector_Close; }
+                catch (COMException) { }
+                catch (InvalidComObjectException) { }
                 try
                 {
-                    inspector = inspectors[index];
-                    object item = inspector.CurrentItem;
-                    if (item is Outlook.AppointmentItem) return false;
+                    if (Marshal.IsComObject(current)) Marshal.FinalReleaseComObject(current);
                 }
-                catch (COMException) { }
+                catch (InvalidComObjectException) { }
             }
-            return true;
         }
 
         public Bitmap Ribbon_GetImage(IRibbonControl control)
