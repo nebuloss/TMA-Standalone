@@ -29,6 +29,7 @@ lines = ['<?xml version="1.0" encoding="utf-8"?>',
  f'<Product Id="*" Name="TMA autonome" Language="1036" Version="{product_version}" '
  'Manufacturer="TMA Standalone Contributors" UpgradeCode="{4E2C715F-1D33-4769-A56B-4954AD128700}">',
  '<Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />',
+ '<Property Id="REINSTALLMODE" Value="amus" />',
  '<Media Id="1" Cabinet="payload.cab" EmbedCab="yes" />',
  # Remove the previous product before component costing. A later schedule can
  # mark versioned files as already present and then delete them with the old MSI.

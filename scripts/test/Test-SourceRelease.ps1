@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $wixlGenerator = Get-Content -LiteralPath (Join-Path $root 'tools\generate-wixl.py') -Raw
+if ($wixlGenerator -notmatch '<Property Id="REINSTALLMODE" Value="amus"') {
+    throw 'MSI upgrades must overwrite equal-version runtime files.'
+}
 if ($wixlGenerator -notmatch '<MajorUpgrade Schedule="afterInstallValidate"') {
     throw 'MajorUpgrade must remove the previous product before component costing.'
 }
