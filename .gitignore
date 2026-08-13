@@ -19,3 +19,5 @@ vendor/*
 !vendor/README.md
 __pycache__/
 *.pyc
+.tools/
+

@@ -31,7 +31,6 @@ vendor/                 Dépendances locales ignorées par Git
 - Outlook classique x64 et ses Primary Interop Assemblies ;
 - .NET Framework 4.8.1 Developer Pack ;
 - Windows 10/11 SDK ;
-- WiX Toolset 4 accessible via `wix.exe` ;
 - le MSI x64 officiel « Microsoft Teams Meeting Add-in » obtenu par vos propres moyens autorisés.
 
 Le dépôt ne contient et ne redistribue aucun binaire Microsoft.
@@ -68,6 +67,10 @@ Il est aussi possible de fournir directement un MSI existant avec
 `.\scripts\build\Build-Windows.ps1 -MsiPath C:\chemin\MicrosoftTeamsMeetingAddinInstaller.msi`.
 
 Le résultat est `TMA-Standalone.msi`. Le build extrait le payload x64 dans `_work`, compile le complément, génère les composants WiX puis vérifie que le MSI possède uniquement l’identité COM clean-room.
+
+Le build Windows télécharge automatiquement un runtime `wixl` portable et
+verrouillé dans `.tools/wixl` (environ 10 Mo). Il ne nécessite ni WiX Toolset,
+ni une installation MSYS2 permanente.
 
 ### CI Linux
 

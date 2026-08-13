@@ -9,5 +9,10 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 if (-not $MsiPath) { $MsiPath = Join-Path $root 'vendor\MicrosoftTeamsMeetingAddinInstaller.msi' }
 if (-not $OutputMsi) { $OutputMsi = Join-Path $root 'TMA-Standalone.msi' }
-& (Join-Path $PSScriptRoot 'Build-Legacy.ps1') -MsiPath $MsiPath -OutputMsi $OutputMsi
+$wixl = Join-Path $root '.tools\wixl'
+if (-not (Test-Path (Join-Path $wixl 'wixl.exe'))) {
+    & (Join-Path $root 'scripts\dependencies\Get-WixlTools.ps1') -Destination $wixl
+}
+& (Join-Path $PSScriptRoot 'Build-Legacy.ps1') -MsiPath $MsiPath -OutputMsi $OutputMsi -WixlDirectory $wixl
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
+

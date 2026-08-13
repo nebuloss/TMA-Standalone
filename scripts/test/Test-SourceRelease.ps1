@@ -18,7 +18,7 @@ foreach ($pattern in $patterns) {
 }
 foreach ($required in 'README.md','LICENSE','NOTICE.md','SECURITY.md','dependencies.lock.json','vendor/README.md',
     'scripts/dependencies/Get-TmaInstaller.ps1','scripts/build/Build-Windows.ps1',
-    'scripts/build/Build-Linux.ps1','installer/Product.wxs','src/TmaCleanRoom/TmaCleanRoom.Addin.cs',
+    'scripts/build/Build-Linux.ps1','src/TmaCleanRoom/TmaCleanRoom.Addin.cs',
     'src/TmaCleanRoom/TmaCleanRoom.Addin.csproj') {
     if ($tracked -notcontains $required) { throw "Fichier de publication absent : $required" }
 }

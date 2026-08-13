@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $false)]
     [string]$MsiPath,
-    [string]$OutputMsi
+    [string]$OutputMsi,
+    [string]$WixlDirectory
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +14,6 @@ $work = Join-Path $root "_work"
 $extract = Join-Path $work "extracted"
 $payload = Join-Path $work "payload"
 $cleanRoomOutput = Join-Path $work "clean-room"
-$filesWxs = Join-Path $work "TmaFiles.wxs"
 
 function Step([string]$message) {
     Write-Host "`n==> $message" -ForegroundColor Cyan
@@ -49,11 +49,10 @@ $actualHash = (Get-FileHash -LiteralPath $MsiPath -Algorithm SHA256).Hash
 if ($actualHash -ne $lock.microsoftTeamsMeetingAddinInstaller.sha256) {
     Write-Warning "Version Microsoft non verrouillée : build valide mais non reproductible à l'identique."
 }
-foreach ($path in @($MsiPath, (Join-Path $root "installer\Product.wxs"),
-    (Join-Path $root "scripts\build\Build-CleanRoom.ps1"))) {
+foreach ($path in @($MsiPath, (Join-Path $root "scripts\build\Build-CleanRoom.ps1"))) {
     if (-not (Test-Path -LiteralPath $path)) { throw "Fichier requis introuvable : $path" }
 }
-if (-not (Get-Command wix.exe -ErrorAction SilentlyContinue)) { throw "WiX 4 (wix.exe) est absent du PATH." }
+if (-not $WixlDirectory -or -not (Test-Path (Join-Path $WixlDirectory 'wixl.exe'))) { throw "wixl portable absent." }
 
 Step "Préparation du répertoire de travail"
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
@@ -109,49 +108,15 @@ Step "Compilation du complément COM indépendant"
 if (-not (Test-Path (Join-Path $cleanRoomOutput "TmaCleanRoom.Addin.dll"))) { throw "DLL clean-room non produite." }
 Copy-Item (Join-Path $cleanRoomOutput '*') $payload -Recurse -Force
 
-Step "Génération déterministe de la liste WiX"
-$files = Get-ChildItem $payload -Recurse -File | Sort-Object FullName
-$directories = @{}
-foreach ($file in $files) {
-    $relative = $file.FullName.Substring($payload.Length).TrimStart('\')
-    $directory = Split-Path $relative -Parent
-    $current = ''
-    foreach ($part in @($directory -split '\\' | Where-Object { $_ })) {
-        $current = if ($current) { "$current\$part" } else { $part }
-        if (-not $directories.ContainsKey($current)) {
-            $directories[$current] = [pscustomobject]@{
-                Path=$current; Parent=(Split-Path $current -Parent); Name=$part; Id=(WixId 'Dir' $current)
-            }
-        }
-    }
-}
-$builder = [Text.StringBuilder]::new()
-[void]$builder.AppendLine('<?xml version="1.0" encoding="utf-8"?>')
-[void]$builder.AppendLine('<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"><Fragment><DirectoryRef Id="INSTALLFOLDER">')
-function WriteDirectories([string]$parent,[int]$indent) {
-    foreach ($directory in $directories.Values | Where-Object Parent -EQ $parent | Sort-Object Name) {
-        [void]$builder.AppendLine((' ' * $indent) + '<Directory Id="' + $directory.Id + '" Name="' + [Security.SecurityElement]::Escape($directory.Name) + '">')
-        WriteDirectories $directory.Path ($indent + 2)
-        [void]$builder.AppendLine((' ' * $indent) + '</Directory>')
-    }
-}
-WriteDirectories '' 4
-[void]$builder.AppendLine('</DirectoryRef></Fragment><Fragment><ComponentGroup Id="TmaFiles">')
-foreach ($file in $files) {
-    $relative = $file.FullName.Substring($payload.Length).TrimStart('\')
-    $relativeDirectory = Split-Path $relative -Parent
-    $directoryId = if ($relativeDirectory) { $directories[$relativeDirectory].Id } else { 'INSTALLFOLDER' }
-    $componentId = WixId 'Cmp' $relative
-    $fileId = WixId 'File' $relative
-    $source = [Security.SecurityElement]::Escape($file.FullName)
-    [void]$builder.AppendLine("<Component Id=`"$componentId`" Guid=`"$(StableGuid $relative)`" Directory=`"$directoryId`"><File Id=`"$fileId`" Source=`"$source`" KeyPath=`"yes`" /></Component>")
-}
-[void]$builder.AppendLine('</ComponentGroup></Fragment></Wix>')
-[IO.File]::WriteAllText($filesWxs, $builder.ToString(), [Text.UTF8Encoding]::new($false))
-
 Step "Compilation du MSI"
 Remove-Item -LiteralPath $OutputMsi -Force -ErrorAction SilentlyContinue
-& wix.exe build (Join-Path $root "installer\Product.wxs") $filesWxs -arch x64 -o $OutputMsi
+$wixlWxs = Join-Path $work 'TmaWixl.wxs'
+$env:TMA_PAYLOAD = $payload
+$env:TMA_WXS = $wixlWxs
+& python (Join-Path $root 'tools\generate-wixl.py')
+if ($LASTEXITCODE) { throw 'Génération wixl impossible.' }
+$env:WIXL_DATA_DIR = Join-Path $WixlDirectory 'share\wixl-0.106'
+& (Join-Path $WixlDirectory 'wixl.exe') --arch x64 -o $OutputMsi $wixlWxs
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path $OutputMsi)) { throw "Échec de compilation WiX." }
 
 Step "Validation du MSI"

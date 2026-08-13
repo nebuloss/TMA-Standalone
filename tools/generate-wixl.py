@@ -28,21 +28,24 @@ lines = ['<?xml version="1.0" encoding="utf-8"?>',
  '<Directory Id="TARGETDIR" Name="SourceDir"><Directory Id="ProgramFiles64Folder">',
  '<Directory Id="INSTALLFOLDER" Name="TMA-Standalone">']
 
+def emit_files(parent):
+    for f in files:
+        rel = f.relative_to(payload)
+        if rel.parent != parent:
+            continue
+        component = wix_id('Cmp', rel)
+        components.append(component)
+        lines.append(f'<Component Id="{component}" Guid="{{{stable_guid(rel)}}}">'
+                     f'<File Id="{wix_id("File", rel)}" Source="{escape(str(f))}" KeyPath="yes" /></Component>')
+
 def emit(parent):
+    emit_files(parent)
     for d in dirs:
         if d.parent == parent:
             lines.append(f'<Directory Id="{ids[d]}" Name="{escape(d.name)}">')
             emit(d)
             lines.append('</Directory>')
 emit(pathlib.Path('.'))
-
-for f in files:
-    rel = f.relative_to(payload)
-    component = wix_id('Cmp', rel)
-    components.append(component)
-    directory = 'INSTALLFOLDER' if rel.parent == pathlib.Path('.') else ids[rel.parent]
-    lines.append(f'<Component Id="{component}" Guid="{{{stable_guid(rel)}}}" Directory="{directory}">'
-                 f'<File Id="{wix_id("File", rel)}" Source="{escape(str(f))}" KeyPath="yes" /></Component>')
 
 registry = [
  ('ComRegistration', 'A2455011-95CC-42D0-A8AB-8E23C52AF70D', [
@@ -62,7 +65,7 @@ registry = [
   ('Software\\Microsoft\\Office\\16.0\\Outlook\\Resiliency\\DoNotDisableAddinList', 'TmaCleanRoom.Connect', '#1', 'yes')])]
 for cid, guid, values in registry:
     components.append(cid)
-    lines.append(f'<Component Id="{cid}" Guid="{{{guid}}}" Directory="INSTALLFOLDER">')
+    lines.append(f'<Component Id="{cid}" Guid="{{{guid}}}">')
     for index, (key, name, value, keypath) in enumerate(values):
         name_attr = f' Name="{escape(name)}"' if name else ''
         value_type = 'integer' if value.startswith('#') else 'string'
@@ -74,3 +77,4 @@ lines += ['</Directory></Directory></Directory>', '<Feature Id="MainFeature" Tit
 lines += [f'<ComponentRef Id="{component}" />' for component in components]
 lines += ['</Feature>', '</Product>', '</Wix>']
 output.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
