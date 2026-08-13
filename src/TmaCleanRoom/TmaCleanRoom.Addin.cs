@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Web;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 using Microsoft.Office.Core;
 using Extensibility;
@@ -23,9 +24,14 @@ namespace TmaCleanRoom
     {
         private Outlook.Application outlook;
         private readonly List<IRibbonUI> ribbons = new List<IRibbonUI>();
+        private IRibbonUI explorerRibbon;
         private Outlook.Inspectors inspectors;
+        private Outlook.Explorer activeExplorer;
         private readonly List<AppointmentInspectorTracker> appointmentInspectors =
             new List<AppointmentInspectorTracker>();
+        // Outlook creates the Inspector asynchronously. Keep the Explorer controls
+        // disabled between the ribbon click and the corresponding NewInspector event.
+        private bool explorerMeetingActionActive;
 
         public void OnConnection(object application, ext_ConnectMode connectMode,
             object addInInst, ref Array custom)
@@ -35,6 +41,9 @@ namespace TmaCleanRoom
             {
                 inspectors = outlook.Inspectors;
                 inspectors.NewInspector += Inspectors_NewInspector;
+                activeExplorer = outlook.ActiveExplorer();
+                if (activeExplorer != null)
+                    ((Outlook.ExplorerEvents_10_Event)activeExplorer).Activate += Explorer_Activate;
                 for (int index = 1; index <= inspectors.Count; index++)
                     TrackAppointmentInspector(inspectors[index]);
             }
@@ -44,6 +53,14 @@ namespace TmaCleanRoom
         {
             if (inspectors != null)
                 inspectors.NewInspector -= Inspectors_NewInspector;
+            if (activeExplorer != null)
+            {
+                try { ((Outlook.ExplorerEvents_10_Event)activeExplorer).Activate -= Explorer_Activate; }
+                catch { }
+                try { Marshal.FinalReleaseComObject(activeExplorer); }
+                catch { }
+            }
+            activeExplorer = null;
             foreach (AppointmentInspectorTracker tracker in appointmentInspectors)
                 tracker.Dispose();
             appointmentInspectors.Clear();
@@ -51,6 +68,7 @@ namespace TmaCleanRoom
             inspectors = null;
             if (outlook != null) Marshal.FinalReleaseComObject(outlook);
             outlook = null;
+            explorerRibbon = null;
             ribbons.Clear();
         }
 
@@ -76,7 +94,20 @@ namespace TmaCleanRoom
             return String.Empty;
         }
 
-        public void Ribbon_Load(IRibbonUI ui)
+        public void ExplorerRibbon_Load(IRibbonUI ui)
+        {
+            LegacyTeamsSchedulerBridge.Log("Explorer ribbon loaded");
+            explorerRibbon = ui;
+            Ribbon_Load(ui);
+        }
+
+        public void AppointmentRibbon_Load(IRibbonUI ui)
+        {
+            LegacyTeamsSchedulerBridge.Log("Appointment ribbon loaded");
+            Ribbon_Load(ui);
+        }
+
+        private void Ribbon_Load(IRibbonUI ui)
         {
             if (ui != null) ribbons.Add(ui);
         }
@@ -94,60 +125,144 @@ namespace TmaCleanRoom
         private void Inspectors_NewInspector(Outlook.Inspector inspector)
         {
             TrackAppointmentInspector(inspector);
-            InvalidateRibbons();
+            LegacyTeamsSchedulerBridge.Log("New inspector tracked; count=" + appointmentInspectors.Count);
+        }
+
+        private void Explorer_Activate()
+        {
+            // Explorer.Activate is raised when focus returns from an Inspector. It is
+            // a native Outlook event and avoids polling detached COM objects.
+            LegacyTeamsSchedulerBridge.Log(
+                "Explorer.Activate; inspectors=" + appointmentInspectors.Count);
+            InvalidateExplorerRibbon();
+        }
+
+        private void AppointmentInspector_Activate()
+        {
+            LegacyTeamsSchedulerBridge.Log(
+                "Inspector.Activate; inspectors=" + appointmentInspectors.Count);
+            InvalidateExplorerRibbon();
         }
 
         private void TrackAppointmentInspector(Outlook.Inspector inspector)
         {
             if (inspector == null) return;
             object item = inspector.CurrentItem;
-            if (!(item is Outlook.AppointmentItem)) return;
-            appointmentInspectors.Add(new AppointmentInspectorTracker(this, inspector));
+            Outlook.AppointmentItem appointment = item as Outlook.AppointmentItem;
+            if (appointment == null) return;
+            appointmentInspectors.Add(new AppointmentInspectorTracker(
+                this, inspector, appointment));
+            // NewInspector now owns the state; the temporary click guard is no longer
+            // needed once Outlook has exposed the actual appointment window.
+            explorerMeetingActionActive = false;
         }
 
         private void AppointmentInspector_Close(AppointmentInspectorTracker tracker)
         {
             appointmentInspectors.Remove(tracker);
+            LegacyTeamsSchedulerBridge.Log("Inspector close received; count=" + appointmentInspectors.Count);
             tracker.Dispose();
             InvalidateRibbons();
         }
 
+        private void InvalidateExplorerRibbon()
+        {
+            try
+            {
+                if (explorerRibbon != null)
+                {
+                    explorerRibbon.InvalidateControl("TmaCleanRoom.MeetNow");
+                    explorerRibbon.InvalidateControl("TmaCleanRoom.MeetingSplit");
+                    explorerRibbon.Invalidate();
+                }
+            }
+            catch (COMException) { explorerRibbon = null; }
+            catch (InvalidComObjectException) { explorerRibbon = null; }
+        }
+
         public bool ExplorerMeeting_GetEnabled(IRibbonControl control)
         {
-            return appointmentInspectors.Count == 0;
+            bool enabled = !explorerMeetingActionActive &&
+                appointmentInspectors.Count == 0;
+            LegacyTeamsSchedulerBridge.Log("Explorer getEnabled: control=" +
+                (control == null ? "null" : control.Id) + ", enabled=" + enabled +
+                ", inspectors=" + appointmentInspectors.Count);
+            return enabled;
         }
 
         private sealed class AppointmentInspectorTracker : IDisposable
         {
             private Addin owner;
             private Outlook.Inspector inspector;
+            private Outlook.AppointmentItem appointment;
+            private bool closing;
 
-            internal AppointmentInspectorTracker(Addin owner, Outlook.Inspector inspector)
+            internal AppointmentInspectorTracker(Addin owner, Outlook.Inspector inspector,
+                Outlook.AppointmentItem appointment)
             {
                 this.owner = owner;
                 this.inspector = inspector;
+                this.appointment = appointment;
                 ((Outlook.InspectorEvents_10_Event)inspector).Close += Inspector_Close;
+                ((Outlook.InspectorEvents_10_Event)inspector).Activate += Inspector_Activate;
+                ((Outlook.ItemEvents_10_Event)appointment).Close += Appointment_Close;
             }
 
             private void Inspector_Close()
             {
+                NotifyClosed("Inspector.Close");
+            }
+
+            private void Inspector_Activate()
+            {
+                if (owner != null) owner.AppointmentInspector_Activate();
+            }
+
+            private void Appointment_Close(ref bool cancel)
+            {
+                // AppointmentItem.Close is raised reliably for "Don't Save", whereas
+                // Inspector.Close may arrive later (or after its RCW was disconnected).
+                if (!cancel) NotifyClosed("AppointmentItem.Close");
+            }
+
+            private void NotifyClosed(string source)
+            {
+                // Outlook can raise both item and inspector close events for the same
+                // window. Ensure cleanup and ribbon invalidation happen only once.
+                if (closing) return;
+                closing = true;
+                LegacyTeamsSchedulerBridge.Log("Tracker close source=" + source);
                 if (owner != null) owner.AppointmentInspector_Close(this);
             }
 
             public void Dispose()
             {
                 Outlook.Inspector current = inspector;
+                Outlook.AppointmentItem currentAppointment = appointment;
                 inspector = null;
+                appointment = null;
                 owner = null;
-                if (current == null) return;
-                try { ((Outlook.InspectorEvents_10_Event)current).Close -= Inspector_Close; }
-                catch (COMException) { }
-                catch (InvalidComObjectException) { }
-                try
+                // Unsubscribe before releasing each RCW. Accessing CurrentItem while
+                // scanning Inspectors after closure can throw InvalidComObjectException.
+                if (currentAppointment != null)
                 {
-                    if (Marshal.IsComObject(current)) Marshal.FinalReleaseComObject(current);
+                    try { ((Outlook.ItemEvents_10_Event)currentAppointment).Close -= Appointment_Close; }
+                    catch (COMException) { }
+                    catch (InvalidComObjectException) { }
+                    try { if (Marshal.IsComObject(currentAppointment)) Marshal.FinalReleaseComObject(currentAppointment); }
+                    catch (InvalidComObjectException) { }
                 }
-                catch (InvalidComObjectException) { }
+                if (current != null)
+                {
+                    try { ((Outlook.InspectorEvents_10_Event)current).Close -= Inspector_Close; }
+                    catch (COMException) { }
+                    catch (InvalidComObjectException) { }
+                    try { ((Outlook.InspectorEvents_10_Event)current).Activate -= Inspector_Activate; }
+                    catch (COMException) { }
+                    catch (InvalidComObjectException) { }
+                    try { if (Marshal.IsComObject(current)) Marshal.FinalReleaseComObject(current); }
+                    catch (InvalidComObjectException) { }
+                }
             }
         }
 
@@ -245,19 +360,40 @@ namespace TmaCleanRoom
             }
         }
 
-        private void CreateMeetingWithTemplate(IRibbonControl control, string templateId,
+        private async void CreateMeetingWithTemplate(IRibbonControl control, string templateId,
             string invitationLanguage)
         {
-            try
+            Outlook.AppointmentItem appointment = ResolveAppointment(control);
+            if (appointment == null)
             {
-                Outlook.AppointmentItem appointment = ResolveAppointment(control);
-                if (appointment == null)
+                // The stock add-in marks the element as clicked, invalidates it, and
+                // then awaits its asynchronous action. Yielding here gives Office the
+                // same opportunity to query getEnabled before the Inspector opens.
+                explorerMeetingActionActive = true;
+                LegacyTeamsSchedulerBridge.Log(
+                    "Explorer meeting action queued; disabling controls");
+                InvalidateExplorerRibbon();
+                await Task.Delay(50);
+                try
                 {
                     appointment = (Outlook.AppointmentItem)outlook.CreateItem(
                         Outlook.OlItemType.olAppointmentItem);
                     appointment.MeetingStatus = Outlook.OlMeetingStatus.olMeeting;
                     appointment.Display(false);
+                    ActivateAppointmentInspector(appointment);
                 }
+                catch (Exception ex)
+                {
+                    explorerMeetingActionActive = false;
+                    InvalidateExplorerRibbon();
+                    if (!(ex is OperationCanceledException))
+                        MessageBox.Show(FormatException(ex), "TMA Clean Room",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+            }
+            try
+            {
                 if (String.IsNullOrWhiteSpace(invitationLanguage))
                     invitationLanguage = CleanRoomMeetingService.GetInvitationLanguage(
                         appointment);
@@ -267,13 +403,40 @@ namespace TmaCleanRoom
                     meeting.MeetingId, meeting.JoinUrl,
                     meeting.BodyHtml, meeting.BodyText, meeting.OptionsUrl,
                     invitationLanguage);
+                // The meeting properties drive CreateMeeting_GetVisible and
+                // MeetingActions_GetVisible. Office does not reevaluate those
+                // callbacks merely because the item properties changed, so refresh
+                // the Inspector ribbon as soon as ApplyMeeting has completed.
+                InvalidateRibbons();
                 appointment.Display(false);
             }
             catch (Exception ex)
             {
+                explorerMeetingActionActive = false;
+                InvalidateExplorerRibbon();
                 if (ex is OperationCanceledException) return;
                 MessageBox.Show(FormatException(ex), "TMA Clean Room",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static void ActivateAppointmentInspector(
+            Outlook.AppointmentItem appointment)
+        {
+            Outlook.Inspector inspector = null;
+            try
+            {
+                // Display(false) can show an Inspector without making it active. In
+                // that state Outlook keeps painting the Explorer ribbon until the
+                // user clicks the editor. Explicit activation selects the correct
+                // appointment ribbon as soon as the window becomes visible.
+                inspector = appointment.GetInspector;
+                if (inspector != null) inspector.Activate();
+            }
+            finally
+            {
+                if (inspector != null && Marshal.IsComObject(inspector))
+                    Marshal.FinalReleaseComObject(inspector);
             }
         }
 
@@ -432,7 +595,7 @@ namespace TmaCleanRoom
         }
 
         private const string ExplorerRibbon =
-            "<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='Ribbon_Load'>" +
+            "<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='ExplorerRibbon_Load'>" +
             "<ribbon><tabs><tab idMso='TabCalendar'><group id='TmaCleanRoom.Calendar' label='TMA autonome' insertAfterMso='GroupCalendarNew'>" +
             "<button id='TmaCleanRoom.Connect' label='Se connecter' size='large' getImage='Ribbon_GetImage' getVisible='ConnectOffice_GetVisible' onAction='ConnectOffice'/>" +
             "<button id='TmaCleanRoom.MeetNow' label='Réunion instantanée' size='large' keytip='MN' getImage='Ribbon_GetImage' getVisible='ExplorerMeeting_GetVisible' getEnabled='ExplorerMeeting_GetEnabled' onAction='MeetNow'/>" +
@@ -447,7 +610,7 @@ namespace TmaCleanRoom
             "</group></tab></tabs></ribbon></customUI>";
 
         private const string AppointmentRibbon =
-            "<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='Ribbon_Load'>" +
+            "<customUI xmlns='http://schemas.microsoft.com/office/2009/07/customui' onLoad='AppointmentRibbon_Load'>" +
             "<ribbon><tabs><tab idMso='TabAppointment'><group id='TmaCleanRoom.Appointment' label='TMA autonome' insertAfterMso='GroupShow'>" +
             "<button id='TmaCleanRoom.Connect' label='Se connecter' size='large' getImage='Ribbon_GetImage' getVisible='ConnectOffice_GetVisible' onAction='ConnectOffice'/>" +
             "<menu id='TmaCleanRoom.LanguageMenu' label='Langue' size='large' getImage='Ribbon_GetImage' getVisible='Language_GetVisible'>" +

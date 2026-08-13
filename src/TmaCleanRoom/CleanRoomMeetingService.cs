@@ -208,12 +208,14 @@ namespace TmaCleanRoom
                     dynamic wordDocument = inspector.WordEditor;
                     dynamic range = wordDocument.Content;
                     string existingText = Convert.ToString(range.Text);
-                    range.Collapse(0); // Word.WdCollapseDirection.wdCollapseEnd
+                    range.Collapse(1); // Word.WdCollapseDirection.wdCollapseStart
                     if (!String.IsNullOrWhiteSpace(existingText == null ? null :
                         existingText.Trim('\r', '\n', '\a', ' ')))
                     {
-                        range.InsertParagraphAfter();
-                        range.Collapse(0);
+                        // Outlook a déjà inséré la signature au moment de Display().
+                        // Le bloc de réunion est ajouté avant celle-ci sans la remplacer.
+                        range.InsertParagraphBefore();
+                        range.Collapse(1);
                     }
                     // Word defaults Attachment to true when optional arguments are
                     // omitted. With a dynamic COM dispatch, values must be passed
@@ -221,6 +223,11 @@ namespace TmaCleanRoom
                     // FileName before Word even receives the call.
                     range.InsertFile(temporaryFile, Type.Missing,
                         false, false, false);
+                    if (String.IsNullOrWhiteSpace(existingText == null ? null :
+                        existingText.Trim('\r', '\n', '\a', ' ')))
+                    {
+                        InsertConfiguredOutlookSignature(wordDocument);
+                    }
                 }
                 finally
                 {
@@ -230,6 +237,32 @@ namespace TmaCleanRoom
             finally
             {
                 if (File.Exists(temporaryFile)) File.Delete(temporaryFile);
+            }
+        }
+
+        private static void InsertConfiguredOutlookSignature(dynamic wordDocument)
+        {
+            try
+            {
+                string signatureName = Convert.ToString(wordDocument.Application
+                    .EmailOptions.EmailSignature.NewMessageSignature);
+                if (String.IsNullOrWhiteSpace(signatureName)) return;
+                string signaturePath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Microsoft", "Signatures", signatureName + ".htm");
+                if (!File.Exists(signaturePath)) return;
+                dynamic signatureRange = wordDocument.Content;
+                signatureRange.Collapse(0);
+                signatureRange.InsertParagraphAfter();
+                signatureRange.Collapse(0);
+                signatureRange.InsertFile(signaturePath, Type.Missing,
+                    false, false, false);
+                LegacyTeamsSchedulerBridge.Log("Outlook signature inserted: " + signatureName);
+            }
+            catch (Exception exception)
+            {
+                LegacyTeamsSchedulerBridge.LogException(
+                    "Outlook signature insertion failed", exception);
             }
         }
 
